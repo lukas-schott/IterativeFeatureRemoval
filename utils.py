@@ -1,0 +1,49 @@
+import torch
+from torch.nn import functional as F
+
+
+def dev():
+    if torch.cuda.is_available():
+        return 'cuda:0'
+    else:
+        return
+
+
+def check_bounds(b, minimum=0, maximum=1):
+    assert minimum <= torch.min(b), f'min val in batch is: {torch.min(b)}'
+    assert maximum >= torch.max(b), f'max val in batch is: {torch.max(b)}'
+    # assert 0.5 <= torch.max(b)
+    # assert 0.5 >= torch.min(b)
+
+
+def get_indices_for_class_grid(data, labels, n_classes=10, n_rows=8, plot=True):
+    images = []
+    for i in range(n_classes):
+        images_per_class = data[labels == i][:n_rows]
+        n_successful = images_per_class.shape[0]
+        images_per_class_new = torch.zeros((n_rows, *data.shape[1:]), dtype=images_per_class.dtype)     # fill with 0s
+        images_per_class_new[:n_successful] = images_per_class
+        images += [images_per_class_new]
+    images = torch.stack(images, dim=1).reshape((n_rows * n_classes, *data.shape[1:]))
+    images_rescaled = images - torch.min(images.flatten(1), dim=1)[0][:, None, None, None]
+    images_rescaled /= torch.max(images_rescaled.flatten(1), dim=1)[0][:, None, None, None]
+    return images, images_rescaled
+
+
+def get_loss_fct(config):
+    if config.loss_fct == 'ce':
+        return torch.nn.CrossEntropyLoss()
+    elif config.loss_fct == 'soft_ce':
+        return soft_ce
+    else:
+        raise Exception(f'loss function {config.loss_fct} is not defined')
+
+
+def soft_ce(logits, target, eps=0.1):
+    n_class = logits.size(1)
+
+    one_hot = torch.zeros_like(logits).scatter(1, target.view(-1, 1), 1)
+    one_hot = one_hot * (1 - eps) + (1 - one_hot) * eps / (n_class - 1)
+    log_prb = F.log_softmax(logits, dim=1)
+    loss = -(one_hot * log_prb).sum(dim=1)
+    return torch.mean(loss)
