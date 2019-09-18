@@ -11,6 +11,31 @@ import dataloader as dl
 print('foolbox', foolbox.__version__, foolbox.__path__)
 
 
+def measure_noise_robustness(config, model, data_loader, noise_distribution):
+    bs = 10000
+    img_shape = data_loader.dataset.data[0].shape
+    sorted_data_loader = data.DataLoader(data_loader.dataset, batch_size=bs, shuffle=False)
+
+    n_correct, n_total = 0., 0.
+    for i, (b, l) in enumerate(sorted_data_loader):
+        b, l = b.cuda(), l.cuda()
+        noise = noise_distribution.sample(sample_shape=b.shape).type(torch.float32)
+        b = torch.clamp(b + noise, 0, 1)
+        pred = torch.argmax(model(b), dim=1)
+        n_correct += torch.sum(pred == l)
+        n_total += b.shape[0]
+        if i == 0:
+            l_plot = l
+            b_plot = b
+
+    accuracy = float(n_correct) / n_total
+
+    display_noise_images, _ = u.get_indices_for_class_grid(b_plot, l_plot, n_classes=config.n_classes, n_rows=5)
+    display_noise_images = tu.make_grid(display_noise_images, pad_value=2, nrow=5)
+
+    return accuracy, display_noise_images
+
+
 def calculate_adversarial_perturbations(config, model, data_loader):
     print('running adv attack')
     print()
@@ -61,7 +86,7 @@ def create_adversarial_dataset(config, model, data_loader, keep_data_loader=True
 
     if not keep_data_loader:
         dl.create_new_dataset(config, perturbed_images, original_images, original_targets, is_adversarial,
-                              data_loader)
+                              data_loader)   # in place
 
     success_rate = float(np.sum(is_adversarial)) / len(is_adversarial)
 

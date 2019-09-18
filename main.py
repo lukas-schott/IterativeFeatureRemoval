@@ -26,14 +26,20 @@ def main():
 
     loss_fct = u.get_loss_fct(config)
 
+    # new model
+    model = VanillaCNN().to(u.dev())
+    optimizer = optim.Adam(model.parameters(), lr=config.lr, weight_decay=config.weight_decay)
+
+    # noise generator
+    normal = torch.distributions.Normal(loc=torch.tensor(0.).to(u.dev()), scale=torch.tensor(0.5).to(u.dev()))
+    uniform = torch.distributions.Uniform(low=torch.tensor(-0.5).to(u.dev()), high=torch.tensor(0.5).to(u.dev()))
+    categorical = torch.distributions.Categorical(probs=torch.tensor([0.5, 0.5]).to(u.dev()))
+    noise_distributions = [normal, uniform, categorical]
+
     print('model loaded')
     for loop in range(config.n_loops):
         print()
         print('loop', loop)
-
-        # new model
-        model = VanillaCNN().to(u.dev())
-        optimizer = optim.Adam(model.parameters(), lr=config.lr, weight_decay=config.weight_decay)
 
         # plot datasets
         for name, data_loader in zip(['train', 'test', 'clean'],
@@ -71,6 +77,13 @@ def main():
         # adv attack and create new dataset
         for data_loader, name in zip([data_loader_train, data_loader_test, data_loader_test_clean],
                                      ['train', 'test', 'clean']):
+
+            # measure noise robustness
+            for noise_distribution in noise_distributions:
+                accuracy_noise, imgs_noise = att.measure_noise_robustness(config, model, data_loader, noise_distribution)
+                writer.add_scalar(f'{name}/noise_{noise_distribution.__str__()}', accuracy_noise, global_step=loop)
+                writer.add_image(f'{name}/noise_imgs_{noise_distribution.__str__()}', imgs_noise, global_step=loop)
+
             display_adv_images, display_adv_perturbations, l2_robustness, success_rate = \
                 att.create_adversarial_dataset(config, model, data_loader, keep_data_loader='clean' in name)
 
