@@ -71,7 +71,7 @@ def create_adversarial_dataset(config, model, data_loader, keep_data_loader=True
 def get_l2_score(a, b):
     n_feats = np.prod(b.shape[1:])
     assert np.all(a.shape == b.shape)
-    return np.mean(np.sum(((a - b) ** 2).reshape(-1, n_feats), axis=1))
+    return np.median(np.sum(((a - b) ** 2).reshape(-1, n_feats), axis=1))
 
 
 
