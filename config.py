@@ -15,7 +15,7 @@ class DefaultArguments:
     n_epochs = 15
     batch_size = 128
     weight_decay = 0.00001
-
+    er = 0.
     real_exp = False
 
     lr = 0.01

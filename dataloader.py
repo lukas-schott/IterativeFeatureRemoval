@@ -87,5 +87,11 @@ def create_new_dataset(config, perturbed_imgs, original_imgs, original_labels,
     lambdas = np.sum(perturbations.reshape((-1, n_feats)) * original_imgs[is_adversarial].reshape(-1, n_feats), axis=1)
     original_imgs[is_adversarial] = \
         np.clip(original_imgs[is_adversarial] - lambdas[:, None, None, None] * perturbations, 0, 1)
-    data_loader.dataset.data = torch.from_numpy(original_imgs)
-    data_loader.dataset.targets = torch.from_numpy(original_labels)
+
+    mask = np.empty(original_imgs.shape[0], dtype=np.bool)
+    mask[:] = True
+    if config.er != 0:
+        mask = np.random.choice([True, False], original_imgs.shape[0], p=[1 - config.er, config.er])
+
+    data_loader.dataset.data[mask] = torch.from_numpy(original_imgs)[mask]
+    data_loader.dataset.targets[mask] = torch.from_numpy(original_labels)[mask]
