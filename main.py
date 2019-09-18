@@ -84,7 +84,7 @@ def main():
 
 if __name__ == '__main__':
     seed = 1234
-    np.random.seed(seed)f
+    np.random.seed(seed)
     random.seed(seed)
     torch.manual_seed(seed)
     torch.cuda.manual_seed_all(seed)
