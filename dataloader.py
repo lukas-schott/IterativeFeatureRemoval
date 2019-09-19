@@ -32,7 +32,7 @@ def get_data_loader(config):
     dataset_test_clean.data = dataset_test_clean.data[:end, None]
     dataset_test_clean.targets = dataset_test_clean.targets[:end]
 
-    if config.shift_mnist or config.single_feat:
+    if config.dataset_modification:
         dataset_train, dataset_test, dataset_test_clean = \
             create_pixel_indicator(dataset_train, dataset_test, dataset_test_clean, config=config)
 
@@ -44,36 +44,44 @@ def get_data_loader(config):
 
 
 def create_pixel_indicator(*datasets, config=None):
+    print(f'using dataset: ', config.dataset_modification)
     for dataset in datasets:
         for i in range(10):
             dataset_copy = dataset.data[dataset.targets == i]  # somehow not possible in place
-            if config.single_feat:
-                print('single feat dataset')
+            if config.dataset_modification == 'single_feat':
                 dataset_copy[:] = 0
-                if i == 0:
-                    dataset_copy[:, 0, 4, 4] = 1
-                if i == 1:
-                    dataset_copy[:, 0, 13, 4] = 1
-                if i == 2:
-                    dataset_copy[:, 0, 23, 4] = 1
-                if i == 3:
-                    dataset_copy[:, 0, 4, 13] = 1
-                if i == 4:
-                    dataset_copy[:, 0, 13, 13] = 1
-                if i == 5:
-                    dataset_copy[:, 0, 23, 13] = 1
-                if i == 6:
-                    dataset_copy[:, 0, 4, 23] = 1
-                if i == 7:
-                    dataset_copy[:, 0, 13, 23] = 1
-                if i == 8:
-                    dataset_copy[:, 0, 23, 23] = 1
-                if i == 9:
-                    dataset_copy[:, 0, 20, 20] = 1
+                dataset_copy[:, 0, i, 0] = 1
+
+                # if i == 0:
+                #     dataset_copy[:, 0, 4, 4] = 1
+                # if i == 1:
+                #     dataset_copy[:, 0, 13, 4] = 1
+                # if i == 2:
+                #     dataset_copy[:, 0, 23, 4] = 1
+                # if i == 3:
+                #     dataset_copy[:, 0, 4, 13] = 1
+                # if i == 4:
+                #     dataset_copy[:, 0, 13, 13] = 1
+                # if i == 5:
+                #     dataset_copy[:, 0, 23, 13] = 1
+                # if i == 6:
+                #     dataset_copy[:, 0, 4, 23] = 1
+                # if i == 7:
+                #     dataset_copy[:, 0, 13, 23] = 1
+                # if i == 8:
+                #     dataset_copy[:, 0, 23, 23] = 1
+                # if i == 9:
+                #     dataset_copy[:, 0, 20, 20] = 1
+                dataset_copy = torch.clamp(dataset_copy + torch.rand(dataset_copy.shape) * 0.1, 0, 1)
+            elif config.dataset_modification == 'shift_mnist':
+                dataset_copy[:, 0, i, 0] = 1
+            elif config.dataset_modification == 'double_feat':
+                dataset_copy[:] = 0
+                dataset_copy[:, 0, i, 0] = 1
+                dataset_copy[:, 0, i, 2] = 1
                 dataset_copy = torch.clamp(dataset_copy + torch.rand(dataset_copy.shape) * 0.1, 0, 1)
             else:
-                print('using shift mnist')
-                dataset_copy[:, 0, i, 0] = 1
+                raise Exception(f'dataset {config.dataset_modification} not selectable')
             dataset.data[dataset.targets == i] = dataset_copy
     return datasets
 

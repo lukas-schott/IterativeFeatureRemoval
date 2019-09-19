@@ -10,8 +10,8 @@ class DefaultArguments:
     name = 'trash'
     loss_fct = 'soft_ce'
     n_loops = 10
-    shift_mnist = False
-    single_feat = False
+    dataset_modification = 'mnist'
+
     n_epochs = 15
     batch_size = 128
     weight_decay = 0.00001
@@ -45,13 +45,20 @@ def parse_arguments(**passed_args):
     else:
         args = parser.parse_args()
     args = args.__dict__
-    print('args before last', args)
+    # print('args before last', args)
     # convert str to boolean
     for key, val in args.items():
         if val == 'false':
             args[key] = False
         if val == 'true':
             args[key] = True
+
+    # change some args
+    if args['dataset_modification'] == 'double_feat' or args['dataset_modification'] == 'single_feat':
+        print('changed end')
+        args['end'] = 1000
+        args['n_epoch'] = 20
+
     args['exp_name'] = get_run_name(default_arguments, args)
 
     if args['real_exp']:
