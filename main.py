@@ -7,7 +7,7 @@ import dataloader as dl
 from torch import optim
 
 import attacks as att
-from networks import VanillaCNN
+from networks import VanillaCNN, iRevNet
 import utils as u
 import train
 import evaluate
@@ -27,7 +27,11 @@ def main():
     loss_fct = u.get_loss_fct(config)
 
     # new model
-    model = VanillaCNN().to(u.dev())
+    # python CIFAR_main.py - -nBlocks 18 18 18 - -nStrides 1 2 2 - -nChannels 16 64 256
+    model = iRevNet(nBlocks=[18, 18, 18], nStrides=[1, 2, 2],
+                    nChannels=[16, 64, 256], in_shape=[1, 28, 28], nClasses=10, dropout_rate=0.1,
+                    init_ds=0).to(u.dev())
+
     optimizer = optim.Adam(model.parameters(), lr=config.lr, weight_decay=config.weight_decay)
 
     # noise generator
