@@ -10,7 +10,7 @@ class DefaultArguments:
     name = 'trash'
     loss_fct = 'soft_ce'
     n_loops = 10
-    dataset_modification = 'mnist'
+    dataset_modification = 'None'   # single_feat, double_feat, shift_mnist
 
     n_epochs = 15
     batch_size = 128

@@ -32,7 +32,7 @@ def get_data_loader(config):
     dataset_test_clean.data = dataset_test_clean.data[:end, None]
     dataset_test_clean.targets = dataset_test_clean.targets[:end]
 
-    if config.dataset_modification:
+    if config.dataset_modification != 'None':
         dataset_train, dataset_test, dataset_test_clean = \
             create_pixel_indicator(dataset_train, dataset_test, dataset_test_clean, config=config)
 
