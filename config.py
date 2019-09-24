@@ -8,20 +8,25 @@ tz = timezone("Europe/Berlin")
 
 class DefaultArguments:
     name = 'trash'
-    loss_fct = 'soft_ce'
-    n_loops = 10
-    dataset_modification = 'None'   # single_feat, double_feat, shift_mnist
-
-    n_epochs = 15
-    batch_size = 128
-    weight_decay = 0.00001
-    er = 0.
     real_exp = False
 
     lr = 0.01
-    # adv_epsilon = 2.
+    weight_decay = 0.00001
+    n_epochs = 15
+    n_loops = 10
+    batch_size = 128
+    loss_fct = 'soft_ce'
 
+    er = 0.
+
+    adv_training = True
+    lp_metric = 'linf'
+    attack_iter = 20
+    adv_epsilon = 0.3
+
+    # dataset
     n_classes = 10
+    dataset_modification = 'None'   # single_feat, double_feat, shift_mnist
     end = 60000
 
 

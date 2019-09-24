@@ -37,65 +37,47 @@ def main():
     noise_distributions = [normal, uniform, categorical]
 
     print('model loaded')
-    for loop in range(config.n_loops):
-        print()
-        print('loop', loop)
+    for epoch in range(config.n_epochs):
 
-        # plot datasets
-        for name, data_loader in zip(['train', 'test', 'clean'],
-                                     [data_loader_train, data_loader_test, data_loader_test_clean]):
-
-            images, images_rescaled = u.get_indices_for_class_grid(data_loader.dataset.data, data_loader.dataset.targets,
-                                                                   n_classes=config.n_classes, n_rows=8)
-            images_grid = tu.make_grid(images, pad_value=2, nrow=10)
-            images_rescaled_grid = tu.make_grid(images_rescaled, pad_value=2, nrow=10)
-            writer.add_image(f'{name}/modified_images', images_grid, global_step=loop)
-            writer.add_image(f'{name}/modified_images_rescaled', images_rescaled_grid, global_step=loop)
-            writer.add_scalar(f'{name}/dataset_magnitude', torch.mean(data_loader.dataset.data ** 2), global_step=loop)
-
-        # train and eval
-        assert config.n_epochs > 0
-        epoch_loop, accuracy_train, accuracy_test, accuracy_test_clean = 0, 0, 0, 0
-        for epoch in range(config.n_epochs):
-            epoch_loop = loop * config.n_epochs + epoch
-
-            if epoch > 0:
-                accuracy_train = train.train_net(config, model, optimizer, data_loader_train, loss_fct)
-                writer.add_scalar('train/accuracy', accuracy_train, epoch_loop)
-
-            accuracy_test = evaluate.evaluate_net(config, model, data_loader_test)
-            accuracy_test_clean = evaluate.evaluate_net(config, model, data_loader_test_clean)
-            writer.add_scalar('test/accuracy_current_dataset', accuracy_test, epoch_loop)
-            writer.add_scalar('clean/accuracy', accuracy_test_clean, epoch_loop)
-            print(f'i {epoch} out of ', config.n_epochs, 'acc train', accuracy_train, 'test', accuracy_test,
-                  'clean', accuracy_test_clean)
-
-        writer.add_scalar('train/final_accuracy', accuracy_train, loop)
-        writer.add_scalar('test/final_accuracy_current_dataset', accuracy_test, loop)
-        writer.add_scalar('clean/final_accuracy', accuracy_test_clean, loop)
-
-        # adv attack and create new dataset
-        for data_loader, name in zip([data_loader_train, data_loader_test, data_loader_test_clean],
-                                     ['train', 'test', 'clean']):
+        # adv attack
+        for data_loader, name in zip([data_loader_train, data_loader_test], ['train', 'test']):
+            model.eval()
+            accuracy_clean = evaluate.evaluate_net(config, model, data_loader, adv_training=False)
+            writer.add_scalar(f'{name}/accuracy', accuracy_clean, epoch)
 
             # measure noise robustness
             for noise_distribution in noise_distributions:
-                accuracy_noise, imgs_noise = att.measure_noise_robustness(config, model, data_loader, noise_distribution)
-                writer.add_scalar(f'{name}/noise_{noise_distribution.__str__()}', accuracy_noise, global_step=loop)
-                writer.add_image(f'{name}/noise_imgs_{noise_distribution.__str__()}', imgs_noise, global_step=loop)
+                accuracy_noise, imgs_noise = att.measure_noise_robustness(config, model, data_loader,
+                                                                          noise_distribution)
+                writer.add_scalar(f'{name}_noise/{noise_distribution.__str__()}', accuracy_noise, global_step=epoch)
+                writer.add_image(f'{name}_noise/{noise_distribution.__str__()}', imgs_noise, global_step=epoch)
 
-            display_adv_images, display_adv_perturbations, l2_robustness, success_rate = \
-                att.create_adversarial_dataset(config, model, data_loader, keep_data_loader='clean' in name)
+            for lp_metric, eps in zip(['l2', 'linf'], [10., 1.]):
+                display_adv_images, display_adv_perturbations, l2_robustness, linf_robustness, success_rate = \
+                    att.evaluate_robustness(config, model, data_loader, lp_metric=lp_metric, eps=eps, rand_init=False)
 
-            writer.add_image(f'{name}/perturbations_rescaled', display_adv_perturbations, global_step=loop)
-            writer.add_image(f'{name}/adversarials', display_adv_images, global_step=loop)
-            writer.add_scalar(f'{name}/l2_robustness', l2_robustness, global_step=loop)
-            writer.add_scalar(f'{name}/attack_success_rate', success_rate, global_step=loop)
+                writer.add_image(f'{name}_{lp_metric}/perturbations_rescaled', display_adv_perturbations,
+                                 global_step=epoch)
+                writer.add_image(f'{name}_attack_{lp_metric}/adversarials', display_adv_images, global_step=epoch)
+                writer.add_scalar(f'{name}_attack_{lp_metric}/l2_robustness', l2_robustness, global_step=epoch)
+                writer.add_scalar(f'{name}_attack_{lp_metric}/linf_robustness', linf_robustness, global_step=epoch)
+                writer.add_scalar(f'{name}_attack_{lp_metric}/perturbed_accuracy', 1 - success_rate, global_step=epoch)
+
+        # train and eval
+        assert config.n_epochs > 0
+        accuracy_adv_train = train.train_net(config, model, optimizer, data_loader_train, loss_fct,
+                                             adv_training=config.adv_training)
+        writer.add_scalar(f'train/accuracy_perturbed_init', accuracy_adv_train, epoch)
+
+        print(f'i {epoch} out of ', config.n_epochs, 'clean test', accuracy_clean, 'adv acc train', accuracy_adv_train)
 
     writer.close()
 
 
 if __name__ == '__main__':
+    import traceback
+    from colorama import Fore, init
+
     seed = 1234
     np.random.seed(seed)
     random.seed(seed)
@@ -106,5 +88,9 @@ if __name__ == '__main__':
     torch.backends.cudnn.deterministic = True
     torch.backends.cudnn.benchmark = False
 
-    main()
+    init()
 
+    try:
+        main()
+    except Exception:
+        print(Fore.RED + traceback.format_exc() + Fore.RESET)

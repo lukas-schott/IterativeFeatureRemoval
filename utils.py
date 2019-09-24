@@ -25,9 +25,9 @@ def get_indices_for_class_grid(data, labels, n_classes=10, n_rows=8, plot=True):
         images_per_class_new[:n_successful] = images_per_class
         images += [images_per_class_new]
     images = torch.stack(images, dim=1).reshape((n_rows * n_classes, *data.shape[1:]))
-    images_rescaled = images - torch.min(images.flatten(1), dim=1)[0][:, None, None, None]
-    images_rescaled /= torch.max(images_rescaled.flatten(1), dim=1)[0][:, None, None, None]
-    return images, images_rescaled
+    images_rescaled = rescale_image_to_01(images)
+    labels = torch.arange(n_classes).repeat(n_rows).T.flatten()
+    return images, images_rescaled, labels
 
 
 def get_loss_fct(config):
@@ -47,3 +47,15 @@ def soft_ce(logits, target, eps=0.1):
     log_prb = F.log_softmax(logits, dim=1)
     loss = -(one_hot * log_prb).sum(dim=1)
     return torch.mean(loss)
+
+
+def rescale_image_to_01(images):
+    assert len(images.shape) == 4
+    images_rescaled = images - torch.min(images.flatten(1), dim=1)[0][:, None, None, None]
+    images_rescaled /= torch.max(images_rescaled.flatten(1), dim=1)[0][:, None, None, None]
+    return images_rescaled
+
+
+def label_2_onehot(l, n_classes=10):
+    y_onehot = torch.empty((len(l), n_classes), device=dev()).zero_()
+    return y_onehot.scatter_(1, l[:, None], 1)
