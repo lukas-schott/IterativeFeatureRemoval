@@ -49,13 +49,21 @@ def soft_ce(logits, target, eps=0.1):
     return torch.mean(loss)
 
 
-def rescale_image_to_01(images):
+def rescale_image_to_01(images: torch.Tensor):
     assert len(images.shape) == 4
     images_rescaled = images - torch.min(images.flatten(1), dim=1)[0][:, None, None, None]
     images_rescaled /= torch.max(images_rescaled.flatten(1), dim=1)[0][:, None, None, None]
     return images_rescaled
 
 
-def label_2_onehot(l, n_classes=10):
+def label_2_onehot(l: torch.Tensor, n_classes: int = 10):
     y_onehot = torch.empty((len(l), n_classes), device=dev()).zero_()
     return y_onehot.scatter_(1, l[:, None], 1)
+
+
+def save_state(model: torch.nn.Module, optimizer: torch.optim.Optimizer, save_path: str, replace_best: bool = False):
+    torch.save(model.state_dict(), save_path + '/save_model_most_recent.pt')
+    torch.save(optimizer.state_dict(), save_path + '/save_optimizer_most_recent.pt')
+    if replace_best:
+        torch.save(model.state_dict(), save_path + '/save_model_best.pt')
+        torch.save(optimizer.state_dict(), save_path + '/save_optimizer_best.pt')

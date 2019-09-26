@@ -67,11 +67,7 @@ def main():
                                  global_step=epoch)
 
         # save network
-        torch.save(model.state_dict(), config.experiment_folder + '/save_model_most_recent.pt')
-        torch.save(optimizer.state_dict(), config.experiment_folder + '/save_optimizer_most_recent.pt')
-        if last_linf_accuracy <= linf_accuracy:
-            torch.save(model.state_dict(), config.experiment_folder + '/save_model_best.pt')
-            torch.save(optimizer.state_dict(), config.experiment_folder + '/save_optimizer_best.pt')
+        u.save_state(model, optimizer, config.experiment_folder, replace_best=last_linf_accuracy <= linf_accuracy)
 
         # train and eval
         accuracy_adv_train = train.train_net(config, model, optimizer, data_loader_train, loss_fct,
