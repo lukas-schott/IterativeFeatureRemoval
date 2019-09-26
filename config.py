@@ -70,7 +70,7 @@ def parse_arguments(**passed_args):
         exp_folder = './exp_adv_training/'
     else:
         exp_folder = './test_exp/'
-    args['experiment_folder'] = exp_folder + args['exp_name']
+    args['experiment_folder'] = exp_folder + args['exp_name'] + '/'
 
     print('Parsed arguments:')
     args = AttrDict(args)

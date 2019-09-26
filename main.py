@@ -36,6 +36,7 @@ def main():
     noise_distributions = [normal, uniform, categorical]
 
     print('model loaded, starting training')
+    last_linf_accuracy = 0
     for epoch in range(config.n_epochs):
 
         # adv attack
@@ -64,6 +65,13 @@ def main():
                 writer.add_image(f'{name}_attack_{lp_metric}/adversarials', display_adv_images, global_step=epoch)
                 writer.add_image(f'{name}_attack_{lp_metric}/perturbations_rescaled', display_adv_perturbations,
                                  global_step=epoch)
+
+        # save network
+        torch.save(model.state_dict(), config.experiment_folder + '/save_model_most_recent.pt')
+        torch.save(optimizer.state_dict(), config.experiment_folder + '/save_optimizer_most_recent.pt')
+        if last_linf_accuracy <= linf_accuracy:
+            torch.save(model.state_dict(), config.experiment_folder + '/save_model_best.pt')
+            torch.save(optimizer.state_dict(), config.experiment_folder + '/save_optimizer_best.pt')
 
         # train and eval
         accuracy_adv_train = train.train_net(config, model, optimizer, data_loader_train, loss_fct,
