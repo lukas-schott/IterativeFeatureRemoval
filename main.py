@@ -2,7 +2,6 @@ from config import parse_arguments
 
 import torch
 from torch.utils.tensorboard import SummaryWriter
-from torchvision import utils as tu
 import dataloader as dl
 from torch import optim
 
@@ -36,40 +35,42 @@ def main():
     categorical = torch.distributions.Categorical(probs=torch.tensor([0.5, 0.5]).to(u.dev()))
     noise_distributions = [normal, uniform, categorical]
 
-    print('model loaded')
+    print('model loaded, starting training')
     for epoch in range(config.n_epochs):
 
         # adv attack
         for data_loader, name in zip([data_loader_train, data_loader_test], ['train', 'test']):
             model.eval()
             accuracy_clean = evaluate.evaluate_net(config, model, data_loader, adv_training=False)
-            writer.add_scalar(f'{name}/accuracy', accuracy_clean, epoch)
+            writer.add_scalar(f'{name}/clean_accuracy', accuracy_clean, global_step=epoch)
 
             # measure noise robustness
             for noise_distribution in noise_distributions:
                 accuracy_noise, imgs_noise = att.measure_noise_robustness(config, model, data_loader,
                                                                           noise_distribution)
+
                 writer.add_scalar(f'{name}_noise/{noise_distribution.__str__()}', accuracy_noise, global_step=epoch)
                 writer.add_image(f'{name}_noise/{noise_distribution.__str__()}', imgs_noise, global_step=epoch)
 
+            # measure adversarial robustness
             for lp_metric, eps in zip(['l2', 'linf'], [10., 1.]):
-                display_adv_images, display_adv_perturbations, l2_robustness, linf_robustness, success_rate = \
-                    att.evaluate_robustness(config, model, data_loader, lp_metric=lp_metric, eps=eps, rand_init=False)
+                display_adv_images, display_adv_perturbations, l2_robustness, l2_accuracy, linf_robustness, linf_accuracy,  success_rate = \
+                    att.evaluate_robustness(config, model, data_loader, lp_metric=lp_metric, eps=eps, train=False)
 
-                writer.add_image(f'{name}_{lp_metric}/perturbations_rescaled', display_adv_perturbations,
-                                 global_step=epoch)
-                writer.add_image(f'{name}_attack_{lp_metric}/adversarials', display_adv_images, global_step=epoch)
                 writer.add_scalar(f'{name}_attack_{lp_metric}/l2_robustness', l2_robustness, global_step=epoch)
+                writer.add_scalar(f'{name}_attack_{lp_metric}/l2_accuracy_eps=1.5', l2_accuracy, global_step=epoch)
                 writer.add_scalar(f'{name}_attack_{lp_metric}/linf_robustness', linf_robustness, global_step=epoch)
-                writer.add_scalar(f'{name}_attack_{lp_metric}/perturbed_accuracy', 1 - success_rate, global_step=epoch)
+                writer.add_scalar(f'{name}_attack_{lp_metric}/linf_accuracy_eps=0.3', linf_accuracy, global_step=epoch)
+                writer.add_image(f'{name}_attack_{lp_metric}/adversarials', display_adv_images, global_step=epoch)
+                writer.add_image(f'{name}_attack_{lp_metric}/perturbations_rescaled', display_adv_perturbations,
+                                 global_step=epoch)
 
         # train and eval
-        assert config.n_epochs > 0
         accuracy_adv_train = train.train_net(config, model, optimizer, data_loader_train, loss_fct,
                                              adv_training=config.adv_training)
         writer.add_scalar(f'train/accuracy_perturbed_init', accuracy_adv_train, epoch)
 
-        print(f'i {epoch} out of ', config.n_epochs, 'clean test', accuracy_clean, 'adv acc train', accuracy_adv_train)
+        print(f'epoch {epoch} out of ', config.n_epochs, 'clean test', accuracy_clean, 'adv acc train', accuracy_adv_train)
 
     writer.close()
 

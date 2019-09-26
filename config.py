@@ -10,19 +10,19 @@ class DefaultArguments:
     name = 'trash'
     real_exp = False
 
-    lr = 0.01
-    weight_decay = 0.00001
-    n_epochs = 15
-    n_loops = 10
-    batch_size = 128
-    loss_fct = 'soft_ce'
+    lr = 0.0001         # madry 0.0001
+    weight_decay = 0.0  # madry 0
+    n_epochs = 100      # madry ~ 83
+    batch_size = 128    # madry 50
+    loss_fct = 'ce'     # 'ce' or 'soft_ce' madry: ce
 
     er = 0.
 
     adv_training = True
     lp_metric = 'linf'
-    attack_iter = 20
-    adv_epsilon = 0.3
+    attack_iter = 40        # madry 40
+    adv_epsilon = 0.3       # madry 0.3
+    pgd_step_size = 0.01    # madry 0.01
 
     # dataset
     n_classes = 10
@@ -67,7 +67,7 @@ def parse_arguments(**passed_args):
     args['exp_name'] = get_run_name(default_arguments, args)
 
     if args['real_exp']:
-        exp_folder = './exp/'
+        exp_folder = './exp_adv_training/'
     else:
         exp_folder = './test_exp/'
     args['experiment_folder'] = exp_folder + args['exp_name']

@@ -13,7 +13,7 @@ def evaluate_net(config, model, data_loader, adv_training):
         for i, (b, l) in enumerate(sorted_data_loader):
             b, l = b.to(u.dev()), l.to(u.dev())
             if adv_training:
-                b = calculate_adversarial_perturbations_batch(config, model, b, l, rand_init=False).detach()
+                b = calculate_adversarial_perturbations_batch(config, model, b, l, train=False).detach()
 
             u.check_bounds(b)
             assert 0 <= torch.min(b), 'min in batch {torch.min(b)} smaller than 0'
