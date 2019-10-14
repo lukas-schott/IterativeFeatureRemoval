@@ -16,7 +16,7 @@ def check_bounds(b, minimum=0, maximum=1):
     # assert 0.5 >= torch.min(b)
 
 
-def get_indices_for_class_grid(data, labels, n_classes=10, n_rows=8, plot=True):
+def get_indices_for_class_grid(data, labels, n_classes=10, n_rows=8):
     images = []
     for i in range(n_classes):
         images_per_class = data[labels == i][:n_rows]

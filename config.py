@@ -14,6 +14,7 @@ class DefaultArguments:
     weight_decay = 0.0  # madry 0
     n_epochs = 100      # madry ~ 83
     batch_size = 128    # madry 50
+    test_batch_size = 200
     loss_fct = 'ce'     # 'ce' or 'soft_ce' madry: ce
 
     er = 0.
@@ -21,13 +22,23 @@ class DefaultArguments:
     adv_training = True
     lp_metric = 'linf'
     attack_iter = 40        # madry 40
+    attack_iter_test = 100   # madry 100
     adv_epsilon = 0.3       # madry 0.3
     pgd_step_size = 0.01    # madry 0.01
 
     # dataset
+    dataset = 'minst'       # mnist or cifar
     n_classes = 10
     dataset_modification = 'None'   # single_feat, double_feat, shift_mnist
     end = 60000
+    end_test = 10000
+
+
+    # ep
+    ep_manager = False           # madry false
+    memory_size = 50000
+    replay_prob = 0.2
+    ep_bs = 32
 
 
 def parse_arguments(**passed_args):
@@ -53,9 +64,9 @@ def parse_arguments(**passed_args):
     # print('args before last', args)
     # convert str to boolean
     for key, val in args.items():
-        if val == 'false':
+        if val == 'false' or val == 'False':
             args[key] = False
-        if val == 'true':
+        if val == 'true' or val == 'True':
             args[key] = True
 
     # change some args

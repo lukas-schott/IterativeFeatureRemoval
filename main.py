@@ -6,18 +6,24 @@ import dataloader as dl
 from torch import optim
 
 import attacks as att
-from networks import VanillaCNN
+from networks import get_model
 import utils as u
 import train
 import evaluate
 import numpy as np
 import random
+from experience_replay import ExperienceReplayManager
 
 
 def main():
     config = parse_arguments()
 
     data_loader_train, data_loader_test, data_loader_test_clean = dl.get_data_loader(config)
+
+    ep_manager = None
+    if config.ep_manager:
+        ep_manager = ExperienceReplayManager(config.memory_size, img_shape=data_loader_train.dataset.data.shape[1:],
+                                             replace_probability=config.replay_prob, ep_bs=config.ep_bs)
 
     writer = SummaryWriter(config.experiment_folder)
     for arg, val in config.items():
@@ -26,7 +32,7 @@ def main():
     loss_fct = u.get_loss_fct(config)
 
     # new model
-    model = VanillaCNN().to(u.dev())
+    model = get_model(config).to(u.dev())
     optimizer = optim.Adam(model.parameters(), lr=config.lr, weight_decay=config.weight_decay)
 
     # noise generator
@@ -35,7 +41,7 @@ def main():
     categorical = torch.distributions.Categorical(probs=torch.tensor([0.5, 0.5]).to(u.dev()))
     noise_distributions = [normal, uniform, categorical]
 
-    print('model loaded, starting training')
+    print('model loaded, starting eval and train')
     last_linf_accuracy = 0
     for epoch in range(config.n_epochs):
 
@@ -67,11 +73,13 @@ def main():
                                  global_step=epoch)
 
         # save network
-        u.save_state(model, optimizer, config.experiment_folder, replace_best=last_linf_accuracy <= linf_accuracy)
+        if epoch > 0:
+            u.save_state(model, optimizer, config.experiment_folder, replace_best=last_linf_accuracy <= linf_accuracy)
 
         # train and eval
+        print('starting training')
         accuracy_adv_train = train.train_net(config, model, optimizer, data_loader_train, loss_fct,
-                                             adv_training=config.adv_training)
+                                             adv_training=config.adv_training, ep_manager=ep_manager)
         writer.add_scalar(f'train/accuracy_perturbed_init', accuracy_adv_train, epoch)
 
         print(f'epoch {epoch} out of ', config.n_epochs, 'clean test', accuracy_clean, 'adv acc train', accuracy_adv_train)

@@ -1,11 +1,12 @@
 import torch
-from torch.nn import functional as F
 import utils as u
 from attacks import calculate_adversarial_perturbations_batch
+import time
 
 
-def train_net(config, model, optimizer, data_loader_train, loss_fct=torch.nn.CrossEntropyLoss(),
-              adv_training=False):
+def train_net(config, model: torch.nn.Module, optimizer: torch.optim.Optimizer,
+              data_loader_train, loss_fct=torch.nn.CrossEntropyLoss(),
+              adv_training=False, ep_manager=None):
     model = model.train()
 
     optimizer.zero_grad()
@@ -16,7 +17,8 @@ def train_net(config, model, optimizer, data_loader_train, loss_fct=torch.nn.Cro
 
         if adv_training:
             b = calculate_adversarial_perturbations_batch(config, model, b, l, train=True).detach()
-
+        if ep_manager is not None:
+            b, l = ep_manager.append_with_ep(b, l)
         u.check_bounds(b)
         logits = model(b)
         loss = loss_fct(logits, target=l)

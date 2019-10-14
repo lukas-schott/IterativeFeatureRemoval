@@ -10,8 +10,7 @@ print('foolbox', foolbox.__version__, foolbox.__path__)
 
 
 def measure_noise_robustness(config, model, data_loader, noise_distribution):
-    bs = 10000
-    sorted_data_loader = data.DataLoader(data_loader.dataset, batch_size=bs, shuffle=False)
+    sorted_data_loader = data.DataLoader(data_loader.dataset, batch_size=config.test_batch_size, shuffle=False)
 
     n_correct, n_total = 0., 0.
     for i, (b, l) in enumerate(sorted_data_loader):
@@ -44,10 +43,11 @@ def get_attack(model, lp_metric, eps, config, train=True):
 
     if lp_metric == 'l2':
         adversary = pyatt.L2PGDAttack(model, loss_fn=loss_fct, eps=eps, targeted=False, rand_init=train,
-                                      eps_iter=0.05, nb_iter=(config.attack_iter if train else 100))
+                                      eps_iter=0.05, nb_iter=(config.attack_iter if train else config.attack_iter_test))
     elif lp_metric == 'linf':
         adversary = pyatt.LinfPGDAttack(model, loss_fn=loss_fct, eps=eps, targeted=False, rand_init=train,
-                                        eps_iter=config.pgd_step_size, nb_iter=(config.attack_iter if train else 100))
+                                        eps_iter=config.pgd_step_size,
+                                        nb_iter=(config.attack_iter if train else config.attack_iter_test))
     else:
         raise Exception(f'lp metric {lp_metric} is not defined.')
     return adversary
@@ -57,7 +57,7 @@ def get_adversarial_perturbations(config, model, data_loader, lp_metric, eps, tr
     model.eval()
     adversary = get_attack(model, lp_metric, eps, config, train)
 
-    sorted_data_loader = data.DataLoader(data_loader.dataset, batch_size=1000, shuffle=False)
+    sorted_data_loader = data.DataLoader(data_loader.dataset, batch_size=config.batch_size, shuffle=False)
     perturbed_images = []
     is_adversarial = []
     original_images = []
@@ -93,15 +93,15 @@ def evaluate_robustness(config, model, data_loader, lp_metric, eps, train):
                                                             original_targets[is_adversarial],
                                                             n_classes=config.n_classes, n_rows=8)
     display_adv_images = tu.make_grid(display_adv_images, pad_value=2, nrow=10)
-    l2_robustness, l2_accuracy = get_l2_score(perturbed_images, original_images, is_adversarial)
-    linf_robustness, linf_accuracy = get_linf_score(perturbed_images, original_images, is_adversarial)
+    l2_robustness, l2_accuracy = get_l2_scores(perturbed_images, original_images, is_adversarial)
+    linf_robustness, linf_accuracy = get_linf_scores(perturbed_images, original_images, is_adversarial)
 
     success_rate = float(torch.sum(is_adversarial)) / len(is_adversarial)
     return display_adv_images, display_adv_perturbations, l2_robustness, l2_accuracy, linf_robustness, linf_accuracy, \
            success_rate
 
 
-def get_l2_score(a, b, is_adversarial=None):
+def get_l2_scores(a, b, is_adversarial=None):
     assert a.shape == b.shape
     l2_dists = get_l2_dists(a, b)
     if is_adversarial is not None:
@@ -110,7 +110,7 @@ def get_l2_score(a, b, is_adversarial=None):
     return torch.median(l2_dists), robust_accuracy
 
 
-def get_linf_score(a, b, is_adversarial=None):
+def get_linf_scores(a, b, is_adversarial=None):
     assert a.shape == b.shape
     linf_dists = torch.max(torch.abs(a - b).flatten(1), dim=1)[0]
     if is_adversarial is not None:

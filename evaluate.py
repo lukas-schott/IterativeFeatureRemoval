@@ -6,7 +6,7 @@ from torch.utils import data
 
 def evaluate_net(config, model, data_loader, adv_training):
     model = model.eval()
-    sorted_data_loader = data.DataLoader(data_loader.dataset, batch_size=10000, shuffle=False)
+    sorted_data_loader = data.DataLoader(data_loader.dataset, batch_size=config.test_batch_size, shuffle=False)
 
     with torch.no_grad():
         n_correct, n_total = 0., 0.
