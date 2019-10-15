@@ -1,6 +1,5 @@
 import torch
-from torch.nn import functional as F
-import utils as u
+from iterative_feature_removal import utils as u
 
 
 def train_net(config, model, optimizer, data_loader_train, loss_fct=torch.nn.CrossEntropyLoss()):

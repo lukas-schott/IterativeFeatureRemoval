@@ -1,5 +1,5 @@
 import torch
-import utils as u
+from iterative_feature_removal import utils as u
 
 
 def evaluate_net(config, model, data_loader_test):

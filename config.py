@@ -2,6 +2,7 @@ from argparse import ArgumentParser
 import datetime
 from pytz import timezone
 import sys
+import os
 
 tz = timezone("Europe/Berlin")
 
@@ -9,16 +10,27 @@ tz = timezone("Europe/Berlin")
 class DefaultArguments:
     name = 'trash'
     loss_fct = 'soft_ce'
-    n_loops = 10
+    real_exp = False
+
     dataset_modification = 'None'   # single_feat, double_feat, shift_mnist
 
+    # training
+    n_loops = 10
     n_epochs = 15
     batch_size = 128
     weight_decay = 0.00001
-    er = 0.
-    real_exp = False
+
+    batch_size_test = 1000
 
     lr = 0.01
+
+    # attack
+    lp_metric = 'l2'
+    attack_iter_test = 50
+    attack_l2_step_size = 0.05
+    attack_linf_step_size = 0.05
+    epsilon_accuracy_l2 = 1.5
+    epsilon_accuracy_linf = 0.3
     # adv_epsilon = 2.
 
     n_classes = 10
@@ -32,25 +44,23 @@ def parse_arguments(**passed_args):
     if passed_args:
         default_arguments = {**default_arguments, **passed_args}
 
-    parser = ArgumentParser(
-        description='Robustness Through Adversarial Training')
+    parser = ArgumentParser(description='Robustness Through Adversarial Training')
     for key, value in default_arguments.items():
         if isinstance(value, bool):
             value = str(value).lower()
         parser.add_argument('--' + key, default=value, type=type(value))
 
-    # works with ipython
+    # fix to work with ipython
     if 'ipykernel_launcher.py' in sys.argv[0] or 'default_worker.py' in sys.argv[0]:
         args = parser.parse_args([])
     else:
         args = parser.parse_args()
+
     args = args.__dict__
-    # print('args before last', args)
-    # convert str to boolean
     for key, val in args.items():
-        if val == 'false':
+        if val == 'false' or val == 'False':
             args[key] = False
-        if val == 'true':
+        if val == 'true' or val == 'True':
             args[key] = True
 
     # change some args
@@ -61,14 +71,16 @@ def parse_arguments(**passed_args):
 
     args['exp_name'] = get_run_name(default_arguments, args)
 
+    proj_dir = os.getcwd()
     if args['real_exp']:
-        exp_folder = './exp/'
+        exp_folder = proj_dir + '/exp/'
     else:
-        exp_folder = './test_exp/'
+        exp_folder = proj_dir + '/test_exp/'
     args['experiment_folder'] = exp_folder + args['exp_name']
 
     print('Parsed arguments:')
     args = AttrDict(args)
+    args.proj_dir = proj_dir
     print('args', args)
     return args
 

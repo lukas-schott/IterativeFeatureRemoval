@@ -1,13 +1,5 @@
 from config import parse_arguments
-from torch.utils import data
-from torchvision import datasets, transforms
-from torch import nn
-from torch import optim
-import torch
-from torch.utils.tensorboard import SummaryWriter
 
-from networks import VanillaCNN
-import utils as u
 import numpy as np
 
 

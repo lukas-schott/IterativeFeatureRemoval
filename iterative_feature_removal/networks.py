@@ -1,7 +1,6 @@
 import torch.nn as nn
 from collections import OrderedDict
-import utils as u
-import torch
+from iterative_feature_removal import utils as u
 
 
 class VanillaCNN(nn.Module):
