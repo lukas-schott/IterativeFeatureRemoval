@@ -8,6 +8,7 @@ from iterative_feature_removal.networks import VanillaCNN
 from iterative_feature_removal import evaluate, attacks as att, train, dataloader as dl, utils as u
 import numpy as np
 import random
+from torchvision import utils as tu
 
 
 def main():
@@ -33,28 +34,12 @@ def main():
 
     print('model loaded')
     for loop in range(config.n_loops):
+        model = VanillaCNN().to(u.dev())
+        optimizer = optim.Adam(model.parameters(), lr=config.lr, weight_decay=config.weight_decay)
+
         print()
         print('loop', loop)
 
-        for name, data_loader in data_loaders.items():
-            print('mode', name)
-            for lp, eps in zip(['l2', 'linf'], [1.5, 1.]):
-                overwrite_dl = ('clean' not in name and loop != 0) and lp == config.lp_metric
-                print('metric', lp)
-                print('overwrite_ld', overwrite_dl)
-                display_adv_images, display_adv_perturbations, l2_robustness, l2_accuracy, linf_robustness, \
-                linf_accuracy, success_rate, data_loaders[name] = \
-                    att.evaluate_robustness(config, model, data_loader, lp_metric=lp, eps=eps, train=False,
-                                            overwrite_data_loader=overwrite_dl)
-
-                writer.add_scalar(f'{name}_attack_{lp}/l2_robustness', l2_robustness, global_step=loop)
-                writer.add_scalar(f'{name}_attack_{lp}/linf_robustness', linf_robustness, global_step=loop)
-                writer.add_scalar(f'{name}_attack_{lp}/l2_accuracy_eps={eps}', l2_accuracy, global_step=loop)
-                writer.add_scalar(f'{name}_attack_{lp}/linf_accuracy_eps={lp}', linf_accuracy, global_step=loop)
-                writer.add_image(f'{name}_attack_{lp}/adversarials', display_adv_images, global_step=loop)
-                writer.add_image(f'{name}_attack_{lp}/perturbations_rescaled', display_adv_perturbations,
-                                 global_step=loop)
-                print()
         # train and eval
         # assert config.n_epochs > 0
         epoch_loop, accuracy_train, accuracy_test, accuracy_test_clean = 0, 0, 0, 0
@@ -76,6 +61,33 @@ def main():
         writer.add_scalar('test/final_accuracy_current_dataset', accuracy_test, loop)
         writer.add_scalar('clean/final_accuracy', accuracy_test_clean, loop)
 
+        for name, data_loader in data_loaders.items():
+            print('mode', name)
+            new_dset, new_dset_rescaled, _ = u.get_indices_for_class_grid(data_loader.dataset.data,
+                                                                          data_loader.dataset.targets,
+                                                                          n_classes=config.n_classes, n_rows=8)
+            new_dset = tu.make_grid(new_dset, pad_value=2, nrow=10)
+            new_dset_rescaled = tu.make_grid(new_dset_rescaled, pad_value=2, nrow=10)
+            writer.add_image(f'{name}_attack_{config.lp_metric}/new_dataset', new_dset, global_step=loop)
+            writer.add_image(f'{name}_attack_{config.lp_metric}/new_dataset_recaled', new_dset_rescaled, global_step=loop)
+
+            for lp, eps in zip(['l2', 'linf'], [5., 1.]):
+                overwrite_dl = 'clean' not in name and lp == config.lp_metric
+                print('metric', lp)
+                display_adv_images, display_adv_perturbations, l2_robustness, l2_accuracy, linf_robustness, \
+                linf_accuracy, success_rate, data_loaders[name] = \
+                    att.evaluate_robustness(config, model, data_loader, lp_metric=lp, eps=eps,
+                                            overwrite_data_loader=overwrite_dl)
+
+
+                writer.add_scalar(f'{name}_attack_{lp}/l2_robustness', l2_robustness, global_step=loop)
+                writer.add_scalar(f'{name}_attack_{lp}/linf_robustness', linf_robustness, global_step=loop)
+                writer.add_scalar(f'{name}_attack_{lp}/l2_accuracy_eps={eps}', l2_accuracy, global_step=loop)
+                writer.add_scalar(f'{name}_attack_{lp}/linf_accuracy_eps={eps}', linf_accuracy, global_step=loop)
+                writer.add_image(f'{name}_attack_{lp}/adversarials', display_adv_images, global_step=loop)
+                writer.add_image(f'{name}_attack_{lp}/perturbations_rescaled', display_adv_perturbations,
+                                 global_step=loop)
+                print()
     writer.close()
 
 

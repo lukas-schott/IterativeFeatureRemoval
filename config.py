@@ -26,10 +26,10 @@ class DefaultArguments:
 
     # attack
     lp_metric = 'l2'
-    attack_iter_test = 50
+    attack_iter = 50
     attack_l2_step_size = 0.05
     attack_linf_step_size = 0.05
-    epsilon_accuracy_l2 = 1.5
+    epsilon_accuracy_l2 = 2.0
     epsilon_accuracy_linf = 0.3
     # adv_epsilon = 2.
 
@@ -73,7 +73,7 @@ def parse_arguments(**passed_args):
 
     proj_dir = os.getcwd()
     if args['real_exp']:
-        exp_folder = proj_dir + '/exp/'
+        exp_folder = proj_dir + '/exp_iterative_feature_removal/'
     else:
         exp_folder = proj_dir + '/test_exp/'
     args['experiment_folder'] = exp_folder + args['exp_name']

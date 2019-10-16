@@ -28,24 +28,24 @@ def measure_noise_robustness(config, model, data_loader, noise_distribution):
     return accuracy, display_noise_images
 
 
-def get_attack(model, lp_metric, eps, config, train=True):
-    loss_fct = lambda x, y: madry_loss_fct(x, y, margin=(50 if train else 0.1))
+def get_attack(model, lp_metric, eps, config):
+    loss_fct = lambda x, y: madry_loss_fct(x, y, margin=0.1)
     if lp_metric == 'l2':
         adversary = pyatt.L2BasicIterativeAttack(model, loss_fn=loss_fct, eps=eps, targeted=False,
                                                  eps_iter=config.attack_l2_step_size,
-                                                 nb_iter=(config.attack_iter if train else config.attack_iter_test))
+                                                 nb_iter=config.attack_iter)
     elif lp_metric == 'linf':
         adversary = pyatt.LinfBasicIterativeAttack(model, loss_fn=loss_fct, eps=eps, targeted=False,
                                                    eps_iter=config.attack_linf_step_size,
-                                                   nb_iter=(config.attack_iter if train else config.attack_iter_test))
+                                                   nb_iter=config.attack_iter)
     else:
         raise Exception(f'lp metric {lp_metric} is not defined.')
     return adversary
 
 
-def get_adversarial_perturbations(config, model, data_loader, lp_metric, eps, train=True):
+def get_adversarial_perturbations(config, model, data_loader, lp_metric, eps):
     model.eval()
-    adversary = get_attack(model, lp_metric, eps, config, train)
+    adversary = get_attack(model, lp_metric, eps, config)
 
     sorted_data_loader = data.DataLoader(data_loader.dataset, batch_size=config.batch_size, shuffle=False)
     perturbed_images = []
@@ -70,9 +70,9 @@ def get_adversarial_perturbations(config, model, data_loader, lp_metric, eps, tr
     return perturbed_images, original_images, original_targets, is_adversarial
 
 
-def evaluate_robustness(config, model, data_loader, lp_metric, eps, train, overwrite_data_loader=False):
+def evaluate_robustness(config, model, data_loader, lp_metric, eps, overwrite_data_loader=False):
     perturbed_images, original_images, original_targets, is_adversarial = \
-        get_adversarial_perturbations(config, model, data_loader, lp_metric, eps=eps, train=train)
+        get_adversarial_perturbations(config, model, data_loader, lp_metric, eps=eps)
     adv_perturbations = perturbed_images - original_images
     _, display_adv_perturbations, _ = u.get_indices_for_class_grid(adv_perturbations,
                                                                    original_targets,
@@ -117,7 +117,7 @@ def get_l2_dists(a, b):
     return torch.sqrt(torch.sum(((a - b) ** 2).flatten(1), dim=1))
 
 
-def madry_loss_fct(logits, l, margin=50):
+def madry_loss_fct(logits, l, margin=50.):
     true_logit = logits[range(len(l)), l]
     mask = (1 - u.label_2_onehot(l)).type(torch.bool)
     false_logit = torch.max(logits[mask].view(l.shape[0], 9), dim=1)[0]
