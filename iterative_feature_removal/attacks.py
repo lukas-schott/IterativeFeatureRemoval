@@ -31,11 +31,12 @@ def measure_noise_robustness(config, model, data_loader, noise_distribution):
 def get_attack(model, lp_metric, eps, config):
     loss_fct = lambda x, y: madry_loss_fct(x, y, margin=0.1)
     if lp_metric == 'l2':
-        adversary = pyatt.L2BasicIterativeAttack(model, loss_fn=loss_fct, eps=eps, targeted=False,
+        adversary = pyatt.L2BasicIterativeAttack(model, loss_fn=loss_fct, eps=5., targeted=False,
                                                  eps_iter=config.attack_l2_step_size,
                                                  nb_iter=config.attack_iter)
+        print('adversary l2 step', config.attack_l2_step_size, 'iter', config.attack_iter)
     elif lp_metric == 'linf':
-        adversary = pyatt.LinfBasicIterativeAttack(model, loss_fn=loss_fct, eps=eps, targeted=False,
+        adversary = pyatt.LinfBasicIterativeAttack(model, loss_fn=loss_fct, eps=1., targeted=False,
                                                    eps_iter=config.attack_linf_step_size,
                                                    nb_iter=config.attack_iter)
     else:

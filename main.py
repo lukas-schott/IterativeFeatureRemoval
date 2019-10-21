@@ -4,8 +4,10 @@ import torch
 from torch.utils.tensorboard import SummaryWriter
 from torch import optim
 
-from iterative_feature_removal.networks import VanillaCNN
-from iterative_feature_removal import evaluate, attacks as att, train, dataloader as dl, utils as u
+from iterative_feature_removal.networks import get_model
+from iterative_feature_removal import evaluate, attacks as att, dataloader as dl, utils as u
+from iterative_feature_removal.train import get_trainer
+
 import numpy as np
 import random
 from torchvision import utils as tu
@@ -21,10 +23,7 @@ def main():
         writer.add_text(arg, str(val), 0)
 
     loss_fct = u.get_loss_fct(config)
-
-    # new model
-    model = VanillaCNN().to(u.dev())
-    optimizer = optim.Adam(model.parameters(), lr=config.lr, weight_decay=config.weight_decay)
+    Trainer = get_trainer(config)
 
     # noise generator
     normal = torch.distributions.Normal(loc=torch.tensor(0.).to(u.dev()), scale=torch.tensor(0.5).to(u.dev()))
@@ -34,9 +33,9 @@ def main():
 
     print('model loaded')
     for loop in range(config.n_loops):
-        model = VanillaCNN().to(u.dev())
+        model = get_model(config).to(u.dev())
         optimizer = optim.Adam(model.parameters(), lr=config.lr, weight_decay=config.weight_decay)
-
+        trainer = Trainer(model, data_loaders[config.training_mode], optimizer, loss_fct)
         print()
         print('loop', loop)
 
@@ -47,7 +46,7 @@ def main():
             epoch_loop = loop * config.n_epochs + epoch
 
             if epoch > 0:
-                accuracy_train = train.train_net(config, model, optimizer, data_loaders['train'], loss_fct)
+                accuracy_train = trainer.train_epoch()
                 writer.add_scalar('train/accuracy', accuracy_train, epoch_loop)
 
             accuracy_test = evaluate.evaluate_net(config, model, data_loaders['test'])
@@ -63,23 +62,24 @@ def main():
 
         for name, data_loader in data_loaders.items():
             print('mode', name)
+            if 'append' in name:
+                continue
             new_dset, new_dset_rescaled, _ = u.get_indices_for_class_grid(data_loader.dataset.data,
                                                                           data_loader.dataset.targets,
                                                                           n_classes=config.n_classes, n_rows=8)
             new_dset = tu.make_grid(new_dset, pad_value=2, nrow=10)
             new_dset_rescaled = tu.make_grid(new_dset_rescaled, pad_value=2, nrow=10)
             writer.add_image(f'{name}_attack_{config.lp_metric}/new_dataset', new_dset, global_step=loop)
-            writer.add_image(f'{name}_attack_{config.lp_metric}/new_dataset_recaled', new_dset_rescaled, global_step=loop)
+            writer.add_image(f'{name}_attack_{config.lp_metric}/new_dataset_recaled', new_dset_rescaled,
+                             global_step=loop)
 
-            for lp, eps in zip(['l2', 'linf'], [5., 1.]):
+            for lp, eps in zip(['l2'], [1.5]):
                 overwrite_dl = 'clean' not in name and lp == config.lp_metric
                 print('metric', lp)
                 display_adv_images, display_adv_perturbations, l2_robustness, l2_accuracy, linf_robustness, \
                 linf_accuracy, success_rate, data_loaders[name] = \
                     att.evaluate_robustness(config, model, data_loader, lp_metric=lp, eps=eps,
                                             overwrite_data_loader=overwrite_dl)
-
-
                 writer.add_scalar(f'{name}_attack_{lp}/l2_robustness', l2_robustness, global_step=loop)
                 writer.add_scalar(f'{name}_attack_{lp}/linf_robustness', linf_robustness, global_step=loop)
                 writer.add_scalar(f'{name}_attack_{lp}/l2_accuracy_eps={eps}', l2_accuracy, global_step=loop)
@@ -88,6 +88,11 @@ def main():
                 writer.add_image(f'{name}_attack_{lp}/perturbations_rescaled', display_adv_perturbations,
                                  global_step=loop)
                 print()
+        if config.mode == 'append_dataset':
+            data_loaders['train_appended'] = dl.append_dataset(config,
+                                                               data_loaders['train'],
+                                                               data_loaders['train_appended'])
+
     writer.close()
 
 

@@ -15,8 +15,11 @@ class DefaultArguments:
     dataset_modification = 'None'   # single_feat, double_feat, shift_mnist
 
     # training
+    model = 'cnn'
+    mode = 'overwrite_dataset'           # append_dataset
+    percentage_to_append = 0.2           #
     n_loops = 10
-    n_epochs = 15
+    n_epochs = 10
     batch_size = 128
     weight_decay = 0.00001
 
@@ -116,3 +119,6 @@ class AttrDict(dict):
     def __init__(self, *args, **kwargs):
         super(AttrDict, self).__init__(*args, **kwargs)
         self.__dict__ = self
+
+
+
