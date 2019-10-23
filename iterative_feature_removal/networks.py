@@ -28,51 +28,58 @@ class MLP(nn.Module):
         X = self.linear3(X)
         return X
 
-# class VanillaCNN(nn.Module):
-#     def __init__(self):
-#         print('vanilla CNN 2')
-#         super(VanillaCNN, self).__init__()
-#         self.conv1 = nn.Conv2d(1, 20, 5, 1)
-#         self.conv2 = nn.Conv2d(20, 50, 5, 1)
-#         self.fc1 = nn.Linear(4*4*50, 500)
-#         self.fc2 = nn.Linear(500, 10)
-#
-#     def forward(self, x):
-#         x = F.relu(self.conv1(x))
-#         x = F.max_pool2d(x, 2, 2)
-#         x = F.relu(self.conv2(x))
-#         x = F.max_pool2d(x, 2, 2)
-#         x = x.view(-1, 4*4*50)
-#         x = F.relu(self.fc1(x))
-#         x = self.fc2(x)
-#         return x
 
-
+# model from https://github.com/jeromerony/fast_adversarial/blob/master/fast_adv/models/mnist/small_cnn.py
 class VanillaCNN(nn.Module):
-    def __init__(self):
-        super().__init__()
-        print('vanilla CNN 1')
-        self.conv_1 = nn.Conv2d(1, 16, kernel_size=(5, 5))
-        self.relu_1 = nn.ReLU()
-        self.pool_1 =nn.MaxPool2d(kernel_size=(2, 2), stride=2)
+    def __init__(self, drop=0.5):
+        super(VanillaCNN, self).__init__()
 
-        self.conv_2 = nn.Conv2d(16, 16, kernel_size=(4, 4))
-        self.relu_2 = nn.ReLU()
-        self.pool_2 = nn.MaxPool2d(kernel_size=(2, 2), stride=2)
+        self.num_channels = 1
+        self.num_labels = 10
 
-        self.conv_3 = nn.Conv2d(16, 120, kernel_size=(4, 4))
-        self.relu_3 = nn.ReLU()
+        activ = nn.ReLU(True)
 
-        self.fc_4 = nn.Linear(120, 84)
-        self.relu_4 = nn.ReLU()
-        self.fc_5 = nn.Linear(84, 10)
+        # feature extractor
+        self.conv_1 = nn.Conv2d(self.num_channels, 32, 3)
+        self.relu_1 = activ
 
-    def forward(self, img, return_all=False):
-        layer_1 = self.pool_1(self.relu_1(self.conv_1(img)))
-        layer_2 = self.pool_2(self.relu_2(self.conv_2(layer_1)))
-        layer_3 = self.relu_3(self.conv_3(layer_2))
-        layer_4 = self.relu_4(self.fc_4(layer_3.flatten(1)))
-        logits = self.fc_5(layer_4)
-        if return_all:
-            return logits, [layer_1, layer_2, layer_3, layer_4]
+        self.conv_2 = nn.Conv2d(32, 32, 3)
+        self.relu_2 = activ
+
+        self.pool_3 = nn.MaxPool2d(2, 2)
+        self.conv_3 = nn.Conv2d(32, 64, 3)
+        self.relu_3 = activ
+
+        self.conv_4 = nn.Conv2d(64, 64, 3)
+        self.relu_4 = activ
+
+        # classifier
+        self.pool_5 = nn.MaxPool2d(2, 2)
+        self.fc_5 = nn.Linear(64 * 4 * 4, 200)
+        self.relu_5 = activ
+
+        self.drop_5 = nn.Dropout(drop)
+        self.fc_6 = nn.Linear(200, 200)
+        self.relu_5 = activ
+
+        self.last = nn.Linear(200, self.num_labels)
+
+        for m in self.modules():
+            if isinstance(m, nn.Conv2d):
+                nn.init.kaiming_normal_(m.weight)
+                if m.bias is not None:
+                    nn.init.constant_(m.bias, 0)
+        # nn.init.constant_(self.classifier.fc3.weight, 0)
+        nn.init.constant_(self.fc_6.bias, 0)
+
+    def forward(self, input, return_activations=False):
+        layer_1 = self.relu_1(self.conv_1(input))
+        layer_2 = self.relu_2(self.conv_2(layer_1))
+        layer_3 = self.relu_3(self.conv_3(self.pool_3(layer_2)))
+        layer_4 = self.relu_4(self.conv_4(layer_3))
+
+        layer_5 = self.relu_5(self.fc_5(self.pool_5(layer_4).view(-1, 64 * 4 * 4)))
+        logits = self.last(layer_5)
+        if return_activations:
+            return logits, (layer_1, layer_2, layer_3, layer_4, layer_5)
         return logits
