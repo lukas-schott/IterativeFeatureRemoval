@@ -29,7 +29,7 @@ class DefaultArguments:
     lr = 0.01
 
     # attack
-    attacks_names = ['BIM', 'PGD1.5', 'PGD2.0', 'PGD2.5', 'PGD3.0', 'DNN_L2']
+    attacks_names = ['BIM', 'PGD_1.5', 'PGD_2.0', 'PGD_2.5', 'PGD_3.0', 'DNN_L2']
     attack_for_new_dataset = 'DNN_L2'
     max_eps_new_dataset = 10.
     lp_metric = 'l2'
