@@ -43,13 +43,11 @@ def get_data_loader(config):
     data_loader_test_clean = data.DataLoader(dataset_test_clean, batch_size=config.batch_size, shuffle=False)
     data_loaders = {'train': data_loader_train, 'test': data_loader_test, 'clean': data_loader_test_clean}
 
-    config.training_mode = 'train'
-    if config.mode == 'append_dataset':
+    if config.training_mode == 'append_dataset':
         dataset_train_append = FloatTensorDataset(dataset_train.data.clone(), dataset_train.targets.clone())
         dataset_train_append.data = torch.stack([dataset_train.data, dataset_train.data], dim=1)
         data_loader_train_append = data.DataLoader(dataset_train_append, batch_size=config.batch_size, shuffle=True)
-        data_loaders['train_appended'] = data_loader_train_append
-        config.training_mode = 'train_appended'
+        data_loaders['train_append'] = data_loader_train_append
     return data_loaders
 
 

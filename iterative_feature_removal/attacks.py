@@ -5,38 +5,30 @@ from iterative_feature_removal import dataloader as dl, utils as u
 from advertorch import attacks as pyatt
 
 
-def measure_noise_robustness(config, model, data_loader, noise_distribution):
-    sorted_data_loader = data.DataLoader(data_loader.dataset, batch_size=config.batch_size_test, shuffle=False)
-
-    n_correct, n_total = 0., 0.
-    for i, (b, l) in enumerate(sorted_data_loader):
-        b, l = b.cuda(), l.cuda()
-        noise = noise_distribution.sample(sample_shape=b.shape).type(torch.float32)
-        b = torch.clamp(b + noise, 0, 1)
-        pred = torch.argmax(model(b), dim=1)
-        n_correct += torch.sum(pred == l)
-        n_total += b.shape[0]
-        if i == 0:
-            l_plot = l
-            b_plot = b
-        break
-    accuracy = float(n_correct) / n_total
-
-    display_noise_images, _, _ = u.get_indices_for_class_grid(b_plot, l_plot, n_classes=config.n_classes, n_rows=5)
-    display_noise_images = tu.make_grid(display_noise_images, pad_value=2, nrow=5)
-
-    return accuracy, display_noise_images
-
-
-def get_attack(model, lp_metric, eps, config):
+def get_attack(model, lp_metric, config, attack, max_eps_l2=10., max_eps_linf=1. ):
     loss_fct = lambda x, y: madry_loss_fct(x, y, margin=0.1)
     if lp_metric == 'l2':
-        adversary = pyatt.L2BasicIterativeAttack(model, loss_fn=loss_fct, eps=5., targeted=False,
-                                                 eps_iter=config.attack_l2_step_size,
-                                                 nb_iter=config.attack_iter)
-        print('adversary l2 step', config.attack_l2_step_size, 'iter', config.attack_iter)
+        if attack == 'BIM':
+            adversary = pyatt.L2BasicIterativeAttack(model, loss_fn=loss_fct, eps=max_eps_l2, targeted=False,
+                                                     eps_iter=config.attack_l2_step_size,
+                                                     nb_iter=config.attack_iter)
+        elif 'PGD' in attack:
+            eps_ball = float(attack[4:])
+            adversary = pyatt.L2PGDAttack(model, loss_fn=loss_fct, eps=eps_ball, targeted=False,
+                                          eps_iter=config.attack_l2_step_size,
+                                          nb_iter=config.attack_iter, rand_init=True)
+        elif attack == 'CW':
+            adversary = pyatt.CarliniWagnerL2Attack(model, config.n_classes, max_iterations=50)
+        elif attack == 'DNN_L2':
+            adversary = pyatt.DDNL2Attack(model, nb_iter=config.attack_iter)
+        elif attack == 'L-BFGS':
+            adversary = pyatt.LBFGSAttack(model, config.n_classes, batch_size=config.attack_batch_size,
+                                          loss_fn=loss_fct)
+        else:
+            raise Exception(f'attack {attack} not implemented')
+
     elif lp_metric == 'linf':
-        adversary = pyatt.LinfBasicIterativeAttack(model, loss_fn=loss_fct, eps=1., targeted=False,
+        adversary = pyatt.LinfBasicIterativeAttack(model, loss_fn=loss_fct, eps=max_eps_linf, targeted=False,
                                                    eps_iter=config.attack_linf_step_size,
                                                    nb_iter=config.attack_iter)
     else:
@@ -44,11 +36,8 @@ def get_attack(model, lp_metric, eps, config):
     return adversary
 
 
-def get_adversarial_perturbations(config, model, data_loader, lp_metric, eps):
-    model.eval()
-    adversary = get_attack(model, lp_metric, eps, config)
-
-    sorted_data_loader = data.DataLoader(data_loader.dataset, batch_size=config.batch_size, shuffle=False)
+def get_adversarial_perturbations(config, model, data_loader, adversaries):
+    sorted_data_loader = data.DataLoader(data_loader.dataset, batch_size=config.attack_batch_size, shuffle=False)
     perturbed_images = []
     is_adversarial = []
     original_images = []
@@ -57,24 +46,51 @@ def get_adversarial_perturbations(config, model, data_loader, lp_metric, eps):
     for i, (b, l) in enumerate(sorted_data_loader):
         b, l = b.to(u.dev()), l.to(u.dev())
         u.check_bounds(b)
-        adversarials = adversary.perturb(b, l).detach()
-        with torch.no_grad():
-            is_adversarial += [(torch.argmax(model(adversarials), dim=1) != l).cpu().type(torch.bool)]
-        perturbed_images += [adversarials.cpu()]
 
-        original_images += [b.cpu()]
-        original_targets += [l.cpu()]
+        adversarials, is_adversarial_batch = run_attacks_single_batch(adversaries, model, b, l, get_l2_dists)
+
+        with torch.no_grad():
+            is_adversarial += [is_adversarial_batch.cpu()]
+            perturbed_images += [adversarials.cpu()]
+            original_images += [b.cpu()]
+            original_targets += [l.cpu()]
+        break
     perturbed_images = torch.cat(perturbed_images, dim=0)
     is_adversarial = torch.cat(is_adversarial, dim=0)   # ignore it if attack failed
     original_images = torch.cat(original_images, dim=0)
     original_targets = torch.cat(original_targets, dim=0)
-    return perturbed_images, original_images, original_targets, is_adversarial
-
-
-def evaluate_robustness(config, model, data_loader, lp_metric, eps, overwrite_data_loader=False):
-    perturbed_images, original_images, original_targets, is_adversarial = \
-        get_adversarial_perturbations(config, model, data_loader, lp_metric, eps=eps)
     adv_perturbations = perturbed_images - original_images
+    return adv_perturbations, perturbed_images, original_images, original_targets, is_adversarial
+
+
+def run_attacks_single_batch(adversaries, model, b, l, norm_fct):
+    max_val = b[0].numel()
+    inds_b = list(range(b.shape[0]))
+    all_l2s = []
+    for i, adversary in enumerate(adversaries):
+        adversarials = adversary.perturb(b, l).detach()
+        is_adversarial = (torch.argmax(model(adversarials), dim=1) != l).cpu().type(torch.bool)
+        lp_dist = norm_fct(b, adversarials)
+        lp_dist[is_adversarial.bitwise_not()] = max_val   # max l2 val'
+        all_l2s.append(lp_dist)
+
+        if i == 0:
+            lp_bests = lp_dist
+            is_adversarial_best = is_adversarial
+            adversarial_best = adversarials
+        else:
+            inds = torch.argmin(torch.stack([lp_bests, lp_dist], dim=1), dim=1)
+            is_adversarial_best = torch.stack([is_adversarial_best, is_adversarial], dim=1)[inds_b, inds]
+            adversarial_best = torch.stack([adversarial_best, adversarials], dim=1)[inds_b, inds]
+    return adversarial_best, is_adversarial_best
+
+
+def evaluate_robustness(config, model, data_loader, adversaries):
+    model.eval()
+
+    adv_perturbations, perturbed_images, original_images, original_targets, is_adversarial = \
+        get_adversarial_perturbations(config, model, data_loader, adversaries=adversaries)
+
     _, display_adv_perturbations, _ = u.get_indices_for_class_grid(adv_perturbations,
                                                                    original_targets,
                                                                    n_classes=config.n_classes, n_rows=8)
@@ -89,9 +105,6 @@ def evaluate_robustness(config, model, data_loader, lp_metric, eps, overwrite_da
 
     success_rate = float(torch.sum(is_adversarial)) / len(is_adversarial)
 
-    if overwrite_data_loader:
-        data_loader = dl.create_new_dataset(config, perturbed_images, original_images, original_targets, is_adversarial,
-                                            data_loader)   # in place
     return display_adv_images, display_adv_perturbations, l2_robustness, l2_accuracy, linf_robustness, linf_accuracy, \
            success_rate, data_loader
 

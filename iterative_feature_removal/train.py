@@ -4,17 +4,21 @@ from torch import optim
 
 
 def get_trainer(config):
-    if config.mode == 'overwrite_dataset':
+    if config.training_mode == 'normal':
+        print('vanilla trainer')
         return Trainer
-    elif config.mode == 'append_dataset':
+    elif config.training_mode == 'append_dataset':
+        print('siamese trainer')
         return SiameseTrainer
+    else:
+        print('mode', config.training_mode)
+        raise NotImplementedError
 
 
 class Trainer:
     def __init__(self, model: torch.nn.Module, data_loader,
                  optimizer: optim.Adam, class_loss_fct=torch.nn.CrossEntropyLoss(),
                  ):
-        print('vanilla trainer')
         self.class_loss_fct = class_loss_fct
         self.n_correct = 0
         self.optimizer = optimizer
@@ -36,53 +40,56 @@ class Trainer:
         return self.model(b)
 
     def loss(self, logits, l):
+        self.n_correct += float(torch.sum(torch.argmax(logits, dim=1) == l))
         return self.class_loss_fct(logits, target=l)
 
-    def train_iter(self, b, l):
+    def preprocess_data(self, b, l):
         u.check_bounds(b)
         b, l = b.to(u.dev()), l.to(u.dev())
-        logits = self.forward(b)
+        return b, l
 
-        loss = self.loss(self, logits, l)
+    def train_iter(self, b, l):
+        b, l = self.preprocess_data(b, l)
+        output = self.forward(b)
+        loss = self.loss(output, l)
 
-        self.backward(loss)
+        loss.backward()
+        self.optimizer.step()
+        self.optimizer.zero_grad()
+        self.track_statistics(b, l, output)
 
+    def track_statistics(self, b, l, logits):
         with torch.no_grad():
             self.n_correct += float(torch.sum(torch.argmax(logits, dim=1) == l))
             self.n_total += b.shape[0]
 
-    def backward(self, loss):
-        loss.backward()
-        self.optimizer.step()
-        self.optimizer.zero_grad()
-
 
 class SiameseTrainer(Trainer):
-    def __init__(self, *args, **kwargs):
-        super().__init__(*args, **kwargs)
-        print('siamese trainer')
-
     def forward(self, b):
         return self.model(b, return_all=True)
 
-    def train_iter(self, b, l):
+    def preprocess_data(self, b, l):
         u.check_bounds(b)
         b, l = b.to(u.dev()), l.to(u.dev())
         b = b.view(b.shape[0] * b.shape[1], *b.shape[2:])
         l = torch.stack([l, l], dim=1).flatten()
-        logits, activations = self.forward(b)
-        loss = self.loss(logits, l, activations)
+        return b, l
 
-        self.backward(loss)
-
-        with torch.no_grad():
-            self.n_correct += float(torch.sum(torch.argmax(logits, dim=1) == l))
-            self.n_total += b.shape[0]
-
-    def loss(self, logits, l, activations):
+    def loss(self, output, l):
+        logits, activations = output
         class_loss = self.class_loss_fct(logits, l)
         activation_loss = 0
         for activation in activations:
             activation_loss += torch.mean((activation[::2] - activation[1::2])**2)
         loss = class_loss + activation_loss
         return loss
+
+    def track_statistics(self, b, l, outputs):
+        logits, _ = outputs
+        super().track_statistics(b, l, logits)
+
+
+# class AdversarialTrainer(Trainer):
+#     def
+
+

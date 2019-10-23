@@ -24,6 +24,7 @@ def main():
 
     loss_fct = u.get_loss_fct(config)
     Trainer = get_trainer(config)
+    print('trainer', Trainer)
 
     # noise generator
     normal = torch.distributions.Normal(loc=torch.tensor(0.).to(u.dev()), scale=torch.tensor(0.5).to(u.dev()))
@@ -31,11 +32,14 @@ def main():
     categorical = torch.distributions.Categorical(probs=torch.tensor([0.5, 0.5]).to(u.dev()))
     noise_distributions = [normal, uniform, categorical]
 
+    attacks_names = ['BIM', 'PGD1.5', 'PGD2.0', 'PGD2.5', 'PGD3.0', 'DNN_L2']
+    train_loader_key = 'train' if config.training_mode == 'normal' else 'train_append'
     print('model loaded')
+
     for loop in range(config.n_loops):
         model = get_model(config).to(u.dev())
         optimizer = optim.Adam(model.parameters(), lr=config.lr, weight_decay=config.weight_decay)
-        trainer = Trainer(model, data_loaders[config.training_mode], optimizer, loss_fct)
+        trainer = Trainer(model, data_loaders[train_loader_key], optimizer, loss_fct)
         print()
         print('loop', loop)
 
@@ -60,8 +64,10 @@ def main():
         writer.add_scalar('test/final_accuracy_current_dataset', accuracy_test, loop)
         writer.add_scalar('clean/final_accuracy', accuracy_test_clean, loop)
 
+        model.eval()
+        adversaries = [att.get_attack(model, 'l2', config, attack) for attack in attacks_names]
         for name, data_loader in data_loaders.items():
-            print('mode', name)
+            print('eval mode', name)
             if 'append' in name:
                 continue
             new_dset, new_dset_rescaled, _ = u.get_indices_for_class_grid(data_loader.dataset.data,
@@ -73,22 +79,18 @@ def main():
             writer.add_image(f'{name}_attack_{config.lp_metric}/new_dataset_recaled', new_dset_rescaled,
                              global_step=loop)
 
-            for lp, eps in zip(['l2'], [1.5]):
-                overwrite_dl = 'clean' not in name and lp == config.lp_metric
-                print('metric', lp)
-                display_adv_images, display_adv_perturbations, l2_robustness, l2_accuracy, linf_robustness, \
-                linf_accuracy, success_rate, data_loaders[name] = \
-                    att.evaluate_robustness(config, model, data_loader, lp_metric=lp, eps=eps,
-                                            overwrite_data_loader=overwrite_dl)
-                writer.add_scalar(f'{name}_attack_{lp}/l2_robustness', l2_robustness, global_step=loop)
-                writer.add_scalar(f'{name}_attack_{lp}/linf_robustness', linf_robustness, global_step=loop)
-                writer.add_scalar(f'{name}_attack_{lp}/l2_accuracy_eps={eps}', l2_accuracy, global_step=loop)
-                writer.add_scalar(f'{name}_attack_{lp}/linf_accuracy_eps={eps}', linf_accuracy, global_step=loop)
-                writer.add_image(f'{name}_attack_{lp}/adversarials', display_adv_images, global_step=loop)
-                writer.add_image(f'{name}_attack_{lp}/perturbations_rescaled', display_adv_perturbations,
-                                 global_step=loop)
-                print()
-        if config.mode == 'append_dataset':
+            display_adv_images, display_adv_perturbations, l2_robustness, l2_accuracy, linf_robustness, \
+            linf_accuracy, success_rate, data_loaders[name] = \
+                att.evaluate_robustness(config, model, data_loader, adversaries)
+            writer.add_scalar(f'{name}_attack_l2/l2_robustness', l2_robustness, global_step=loop)
+            writer.add_scalar(f'{name}_attack_l2/linf_robustness', linf_robustness, global_step=loop)
+            writer.add_scalar(f'{name}_attack_l2/l2_accuracy_eps={1.5}', l2_accuracy, global_step=loop)
+            writer.add_scalar(f'{name}_attack_l2/linf_accuracy_eps={0.3}', linf_accuracy, global_step=loop)
+            writer.add_image(f'{name}_attack_l2/adversarials', display_adv_images, global_step=loop)
+            writer.add_image(f'{name}_attack_l2/perturbations_rescaled', display_adv_perturbations,
+                             global_step=loop)
+
+        if config.training_mode == 'append_dataset':
             data_loaders['train_appended'] = dl.append_dataset(config,
                                                                data_loaders['train'],
                                                                data_loaders['train_appended'])

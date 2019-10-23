@@ -16,7 +16,7 @@ class DefaultArguments:
 
     # training
     model = 'cnn'
-    mode = 'overwrite_dataset'           # append_dataset
+    training_mode = 'normal'           # append_dataset, normal
     percentage_to_append = 0.2           #
     n_loops = 10
     n_epochs = 10
@@ -29,11 +29,14 @@ class DefaultArguments:
 
     # attack
     lp_metric = 'l2'
-    attack_iter = 50
+    attack_batch_size = 1000
+    attack_iter = 80
     attack_l2_step_size = 0.05
     attack_linf_step_size = 0.05
     epsilon_accuracy_l2 = 2.0
     epsilon_accuracy_linf = 0.3
+    epsilon_max_l2 = 10.
+
     # adv_epsilon = 2.
 
     n_classes = 10
