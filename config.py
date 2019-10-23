@@ -16,7 +16,8 @@ class DefaultArguments:
 
     # training
     model = 'cnn'
-    training_mode = 'normal'           # append_dataset, normal
+    training_mode = 'normal'           # append_dataset, normal, overwrite
+    reinit_network = True
     percentage_to_append = 0.2           #
     n_loops = 10
     n_epochs = 10
@@ -28,6 +29,9 @@ class DefaultArguments:
     lr = 0.01
 
     # attack
+    attacks_names = ['BIM', 'PGD1.5', 'PGD2.0', 'PGD2.5', 'PGD3.0', 'DNN_L2']
+    attack_for_new_dataset = 'DNN_L2'
+    max_eps_new_dataset = 10.
     lp_metric = 'l2'
     attack_batch_size = 1000
     attack_iter = 80

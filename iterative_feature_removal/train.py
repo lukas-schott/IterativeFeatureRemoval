@@ -4,7 +4,7 @@ from torch import optim
 
 
 def get_trainer(config):
-    if config.training_mode == 'normal':
+    if config.training_mode == 'normal' or config.training_mode == 'overwrite':
         print('vanilla trainer')
         return Trainer
     elif config.training_mode == 'append_dataset':
@@ -40,7 +40,6 @@ class Trainer:
         return self.model(b)
 
     def loss(self, logits, l):
-        self.n_correct += float(torch.sum(torch.argmax(logits, dim=1) == l))
         return self.class_loss_fct(logits, target=l)
 
     def preprocess_data(self, b, l):

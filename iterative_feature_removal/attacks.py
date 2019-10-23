@@ -36,7 +36,7 @@ def get_attack(model, lp_metric, config, attack, max_eps_l2=10., max_eps_linf=1.
     return adversary
 
 
-def get_adversarial_perturbations(config, model, data_loader, adversaries):
+def get_adversarial_perturbations(config, model, data_loader, adversaries, stop_after_batch=True):
     sorted_data_loader = data.DataLoader(data_loader.dataset, batch_size=config.attack_batch_size, shuffle=False)
     perturbed_images = []
     is_adversarial = []
@@ -54,7 +54,8 @@ def get_adversarial_perturbations(config, model, data_loader, adversaries):
             perturbed_images += [adversarials.cpu()]
             original_images += [b.cpu()]
             original_targets += [l.cpu()]
-        break
+        if stop_after_batch:
+            break
     perturbed_images = torch.cat(perturbed_images, dim=0)
     is_adversarial = torch.cat(is_adversarial, dim=0)   # ignore it if attack failed
     original_images = torch.cat(original_images, dim=0)
@@ -107,6 +108,16 @@ def evaluate_robustness(config, model, data_loader, adversaries):
 
     return display_adv_images, display_adv_perturbations, l2_robustness, l2_accuracy, linf_robustness, linf_accuracy, \
            success_rate, data_loader
+
+
+def generate_new_dataset(config, model, data_loader, adversary):
+    adv_perturbations, perturbed_images, original_images, original_targets, is_adversarial = \
+        get_adversarial_perturbations(config, model, data_loader, adversaries=[adversary],
+                                      stop_after_batch=False)
+    print('len ', len(is_adversarial), 'sucess rate', float(is_adversarial.shape[0]) / torch.sum(is_adversarial))
+    data_loader = dl.create_new_dataset(config, perturbed_images, original_images, original_targets,
+                                        is_adversarial, data_loader)
+    return data_loader
 
 
 def get_l2_scores(a, b, is_adversarial=None):
