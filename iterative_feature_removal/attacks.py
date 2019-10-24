@@ -5,32 +5,33 @@ from iterative_feature_removal import dataloader as dl, utils as u
 from advertorch import attacks as pyatt
 
 
-def get_attack(model, lp_metric, config, attack, max_eps_l2=10., max_eps_linf=1. ):
+def get_attack(model, lp_metric, attack, attack_iter, l2_step_size=0.05, linf_step_size=0.05,
+               max_eps_l2=10., max_eps_linf=1., n_classes=10):
     loss_fct = lambda x, y: madry_loss_fct(x, y, margin=0.1)
     if lp_metric == 'l2':
         if attack == 'BIM':
             adversary = pyatt.L2BasicIterativeAttack(model, loss_fn=loss_fct, eps=max_eps_l2, targeted=False,
-                                                     eps_iter=config.attack_l2_step_size,
-                                                     nb_iter=config.attack_iter)
+                                                     eps_iter=l2_step_size,
+                                                     nb_iter=attack_iter)
         elif 'PGD' in attack:
-            eps_ball = float(attack[4:])
+            if len(attack) > 3:
+                eps_ball = float(attack[4:])
+            else:
+                eps_ball = max_eps_l2
             adversary = pyatt.L2PGDAttack(model, loss_fn=loss_fct, eps=eps_ball, targeted=False,
-                                          eps_iter=config.attack_l2_step_size,
-                                          nb_iter=config.attack_iter, rand_init=True)
+                                          eps_iter=l2_step_size,
+                                          nb_iter=attack_iter, rand_init=True)
         elif attack == 'CW':
-            adversary = pyatt.CarliniWagnerL2Attack(model, config.n_classes, max_iterations=50)
-        elif attack == 'DNN_L2':
-            adversary = pyatt.DDNL2Attack(model, nb_iter=config.attack_iter)
-        elif attack == 'L-BFGS':
-            adversary = pyatt.LBFGSAttack(model, config.n_classes, batch_size=config.attack_batch_size,
-                                          loss_fn=loss_fct)
+            adversary = pyatt.CarliniWagnerL2Attack(model, n_classes, max_iterations=1000)
+        elif attack == 'DDN_L2':
+            adversary = pyatt.DDNL2Attack(model, nb_iter=attack_iter)
         else:
             raise Exception(f'attack {attack} not implemented')
 
     elif lp_metric == 'linf':
         adversary = pyatt.LinfBasicIterativeAttack(model, loss_fn=loss_fct, eps=max_eps_linf, targeted=False,
-                                                   eps_iter=config.attack_linf_step_size,
-                                                   nb_iter=config.attack_iter)
+                                                   eps_iter=linf_step_size,
+                                                   nb_iter=attack_iter)
     else:
         raise Exception(f'lp metric {lp_metric} is not defined.')
     return adversary
