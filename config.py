@@ -6,6 +6,8 @@ import os
 
 tz = timezone("Europe/Berlin")
 
+# ifr experiment
+
 
 class DefaultArguments:
     name = 'trash'
@@ -16,21 +18,26 @@ class DefaultArguments:
 
     # training
     model = 'cnn'
-    training_mode = 'normal'           # append_dataset, normal, overwrite
+    training_mode = 'normal'       # append_dataset, normal, overwrite, adversarial_training (=DDN), 'siamese_adversarial_training'
     reinit_network = True
     percentage_to_append = 0.2           #
-    n_loops = 10
-    n_epochs = 10
-    batch_size = 128
-    weight_decay = 0.00001
+    n_loops = 10                    # DDN: 50
+    n_epochs = 10                   # DDN: 1
+    batch_size = 128                # DDN: 128
+    weight_decay = 1e-6            # DDN: 1e-6
 
     batch_size_test = 1000
 
-    lr = 0.01
+    # optimizer
+    optimizer = 'sgd'      # DDN: sgd
+    lr = 0.01               # DDN: 0.01
+    momentum = 0.9          # DDN: 0.9
+    lr_step = 30             # DNN: 30
+    lr_decay = 0.1
 
     # attack
-    attacks_names = ['BIM', 'PGD_1.5', 'PGD_2.0', 'PGD_2.5', 'PGD_3.0', 'DNN_L2']
-    attack_for_new_dataset = 'DNN_L2'
+    attacks_names = ['BIM', 'PGD_1.5', 'PGD_2.0', 'PGD_2.5', 'PGD_3.0', 'DDN_L2']
+    attack_for_new_dataset = 'DDN_L2'
     max_eps_new_dataset = 10.
     lp_metric = 'l2'
     attack_batch_size = 1000
@@ -41,6 +48,11 @@ class DefaultArguments:
     epsilon_accuracy_linf = 0.3
     epsilon_max_l2 = 10.
 
+    # adv training
+    adv_train_attack_name = 'PGD'    # DDN: DDN_L2
+    adv_train_epsilon = 1.5          # 2.4
+    adv_attack_iter = 20              # DDN: 100
+    adv_l2_step_size = 0.05
     # adv_epsilon = 2.
 
     n_classes = 10
@@ -79,11 +91,14 @@ def parse_arguments(**passed_args):
         args['end'] = 1000
         args['n_epoch'] = 20
 
+    if args['lr_step'] == 0:
+        args['lr_step'] = args['n_epoch']
+
     args['exp_name'] = get_run_name(default_arguments, args)
 
     proj_dir = os.getcwd()
     if args['real_exp']:
-        exp_folder = proj_dir + '/exp_iterative_feature_removal/'
+        exp_folder = proj_dir + '/exp_fr/'
     else:
         exp_folder = proj_dir + '/test_exp/'
     args['experiment_folder'] = exp_folder + args['exp_name']

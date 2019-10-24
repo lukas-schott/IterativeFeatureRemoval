@@ -1,0 +1,2 @@
+# python3 main.py --reinit_network False --name MNIST --training_mode adversarial_training --adv_train_epsilon 2.4 --lr 0.01 --n_epochs 5 --n_loops 15 --name DDN --real_exp True --adv_attack_iter 100 --lr_step 30
+# python3 main.py --reinit_network False --training_mode adversarial_training --adv_train_epsilon 2.4 --lr 0.01 --n_epochs 5 --n_loops 15 --name DDN --real_exp True --adv_attack_iter 100 --lr_step 30 --adv_train_attack_name PGD
