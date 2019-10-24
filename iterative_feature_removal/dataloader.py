@@ -100,10 +100,17 @@ def create_new_dataset(config, perturbed_imgs, original_imgs, original_labels,
 
 
 def append_dataset(config, data_loader, appended_data_loader):
-    original_imgs = data_loader.dataset.data
-    rand_inds = torch.from_numpy(np.random.choice(range(original_imgs.shape[0]),
-                                                  size=int(config.percentage_to_append*original_imgs.shape[0]),
+    adv_imgs = data_loader.dataset.data
+    rand_inds = torch.from_numpy(np.random.choice(range(adv_imgs.shape[0]),
+                                                  size=int(config.percentage_to_append*adv_imgs.shape[0]),
                                                   replace=False))
-    appended_data_loader.dataset.data[rand_inds, 1] = original_imgs[rand_inds]
+    appended_data_loader.dataset.data[rand_inds, 1] = adv_imgs[rand_inds]
     return appended_data_loader
 
+
+def copy_data_loader(data_loader):
+    dset_new = data_loader.dataset
+    dset_new.data =  data_loader.dataset.data.clone()
+    dset_new.targets =  data_loader.dataset.targets.clone()
+    new_data_loader = data.DataLoader(dset_new, batch_size=data_loader.batch_size, shuffle=False)
+    return new_data_loader
