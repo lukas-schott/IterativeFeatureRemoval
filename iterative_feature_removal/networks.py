@@ -69,8 +69,8 @@ class VanillaCNN(nn.Module):
                 nn.init.kaiming_normal_(m.weight)
                 if m.bias is not None:
                     nn.init.constant_(m.bias, 0)
-        # nn.init.constant_(self.classifier.fc3.weight, 0)
-        nn.init.constant_(self.fc_6.bias, 0)
+        nn.init.constant_(self.last.weight, 0)
+        nn.init.constant_(self.last.bias, 0)
 
     def forward(self, input, return_activations=False):
         layer_1 = self.relu_1(self.conv_1(input))
