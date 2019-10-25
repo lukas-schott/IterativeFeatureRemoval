@@ -40,7 +40,6 @@ def main():
             model = get_model(config).to(u.dev())
             optimizer = get_optimizer(config, model)
             scheduler = lr_scheduler.StepLR(optimizer, step_size=config.lr_step, gamma=config.lr_decay)
-
             trainer = Trainer(model, data_loaders[train_loader_key], optimizer, config, loss_fct)
         print()
         print('loop', loop)
@@ -53,6 +52,7 @@ def main():
             if epoch > 0:
                 assert id(model) == id(trainer.model)
                 accuracy_train = trainer.train_epoch()
+                scheduler.step()
                 writer.add_scalar('train/accuracy', accuracy_train, epoch_loop)
             accuracy_test = evaluate.evaluate_net(config, model, data_loaders['test'])
             accuracy_test_clean = evaluate.evaluate_net(config, model, data_loaders['clean'])
