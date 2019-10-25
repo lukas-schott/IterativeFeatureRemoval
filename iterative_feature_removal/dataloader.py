@@ -3,6 +3,7 @@ from torchvision import datasets
 import torch
 from torch.utils import data
 import numpy as np
+from iterative_feature_removal import attacks as att
 
 
 class FloatTensorDataset(data.Dataset):
@@ -43,11 +44,6 @@ def get_data_loader(config):
     data_loader_test_clean = data.DataLoader(dataset_test_clean, batch_size=config.batch_size, shuffle=False)
     data_loaders = {'train': data_loader_train, 'test': data_loader_test, 'clean': data_loader_test_clean}
 
-    if config.training_mode == 'append_dataset':
-        dataset_train_append = FloatTensorDataset(dataset_train.data.clone(), dataset_train.targets.clone())
-        dataset_train_append.data = torch.stack([dataset_train.data, dataset_train.data], dim=1)
-        data_loader_train_append = data.DataLoader(dataset_train_append, batch_size=config.batch_size, shuffle=True)
-        data_loaders['train_append'] = data_loader_train_append
     return data_loaders
 
 
@@ -82,6 +78,8 @@ def create_pixel_indicator(*datasets, config=None):
 def create_new_dataset(config, perturbed_imgs, original_imgs, original_labels,
                        is_adversarial, data_loader):
     print('creating dataset by orthonormal projection')
+    original_imgs[is_adversarial] = att.orthogonal_projection(original_imgs[is_adversarial],
+                                                              perturbed_imgs[is_adversarial])
     n_feats = np.prod(original_imgs.shape[1:])
     # make direction linear and unit length
     perturbations = original_imgs[is_adversarial] - perturbed_imgs[is_adversarial]

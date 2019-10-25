@@ -11,16 +11,19 @@ tz = timezone("Europe/Berlin")
 
 class DefaultArguments:
     name = 'trash'
-    loss_fct = 'soft_ce'
+    loss_fct = 'ce'                 # 'soft_ce', 'ce'
     real_exp = False
 
     dataset_modification = 'None'   # single_feat, double_feat, shift_mnist
 
     # training
     model = 'cnn'
-    training_mode = 'normal'       # append_dataset, normal, overwrite, adversarial_training (=DDN), 'siamese_adversarial_training'
+    training_mode = 'normal'       # normal, adverarial, adversarial_projection
+    activation_matching = False
+    # old append_dataset, project_and_activation_matching, normal, project_out, adversarial_training (=DDN), 'siamese_adversarial_training'
+
     reinit_network = True
-    percentage_to_append = 0.2           #
+    # percentage_to_append = 0.2           #
     n_loops = 10                    # DDN: 50
     n_epochs = 10                   # DDN: 1
     batch_size = 128                # DDN: 128

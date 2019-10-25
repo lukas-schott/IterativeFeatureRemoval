@@ -1,20 +1,25 @@
 import torch
 from iterative_feature_removal import utils as u
-from iterative_feature_removal.attacks import get_attack
+from iterative_feature_removal.attacks import get_attack, orthogonal_projection
 from torch import optim
 
 
 def get_trainer(config):
-    if config.training_mode == 'normal' or config.training_mode == 'overwrite':
-        print('vanilla trainer')
+    if config.training_mode == 'normal':
+        print('Vanilla trainer')
         return Trainer
-    elif config.training_mode == 'append_dataset':
-        print('siamese trainer')
-        return SiameseTrainer
-    elif config.training_mode == 'adversarial_training':
+    elif config.training_mode == 'adversarial' and not config.activation_matching:
+        print('Adversarial trainer')
         return AdversarialTrainer
-    elif config.training_mode == 'siamese_adversarial_training':
-        return AdversarialTrainer
+    elif config.training_mode == 'adversarial' and config.activation_matching:
+        print('Adversarial activation matching trainer')
+        return ActivationMatchingAdversarialTrainer
+    elif config.training_mode == 'adversarial_projection' and not config.activation_matching:
+        print('Adversarial projection trainer')
+        return AdversarialOrthogonalProjectionTrainer
+    elif config.training_mode == 'adversarial_projection' and not config.activation_matching:
+        print('Adversarial projection activation matching trainer')
+        return ActivationMatchingAdversarialOrthogonalProjectionTrainer
     else:
         print('mode', config.training_mode)
         raise NotImplementedError
@@ -86,7 +91,7 @@ class Trainer:
             self.n_total += b.shape[0]
 
 
-class SiameseTrainer(Trainer):
+class ActivationMatchingTrainer(Trainer):
     def forward(self, b):
         return self.model(b, return_activations=True)
 
@@ -132,9 +137,25 @@ class AdversarialTrainer(Trainer):
         return x_adv, l.detach()
 
 
-class SiameseAdversarialTrainer(SiameseTrainer, AdversarialTrainer):
+class ActivationMatchingAdversarialTrainer(ActivationMatchingTrainer, AdversarialTrainer):
     def preprocess_data(self, b, l):
         x_adv, l = AdversarialTrainer.preprocess_data(self, b, l)
         b_new = torch.stack([b, x_adv], dim=1)
-        clean_and_adv, l = SiameseTrainer.preprocess_data(self, b_new, l)
+        clean_and_adv, l = ActivationMatchingTrainer.preprocess_data(self, b_new, l)
+        return clean_and_adv, l
+
+
+class AdversarialOrthogonalProjectionTrainer(AdversarialTrainer):
+    def preprocess_data(self, b, l):
+        x_adv, l = super().preprocess_data(b, l)
+        x_adv = orthogonal_projection(b, x_adv)
+        return x_adv, l
+
+
+class ActivationMatchingAdversarialOrthogonalProjectionTrainer(ActivationMatchingTrainer,
+                                                               AdversarialOrthogonalProjectionTrainer):
+    def preprocess_data(self, b, l):
+        x_adv, l = AdversarialOrthogonalProjectionTrainer.preprocess_data(self, b, l)
+        b_new = torch.stack([b, x_adv], dim=1)
+        clean_and_adv, l = ActivationMatchingTrainer.preprocess_data(self, b_new, l)
         return clean_and_adv, l

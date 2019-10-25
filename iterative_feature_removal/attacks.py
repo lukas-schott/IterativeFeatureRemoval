@@ -3,6 +3,7 @@ import torch
 from torchvision import utils as tu
 from iterative_feature_removal import dataloader as dl, utils as u
 from advertorch import attacks as pyatt
+import numpy as np
 
 
 def get_attack(model, lp_metric, attack, attack_iter, l2_step_size=0.05, linf_step_size=0.05,
@@ -149,3 +150,13 @@ def madry_loss_fct(logits, l, margin=50.):
     false_logit = torch.max(logits[mask].view(l.shape[0], 9), dim=1)[0]
     loss = - torch.sum(torch.relu(true_logit - false_logit + margin))
     return loss
+
+
+def orthogonal_projection(original_imgs, perturbed_imgs):
+    n_feats = np.prod(original_imgs.shape[1:])
+    # make direction linear and unit length
+    perturbations = original_imgs - perturbed_imgs
+    perturbations /= torch.norm(perturbations.view((-1, n_feats)),  dim=1)[:, None, None, None] + 0.0000001
+    lambdas = torch.sum(perturbations.view((-1, n_feats)) * original_imgs.view(-1, n_feats), dim=1)
+    new_imgs = torch.clamp(original_imgs - lambdas[:, None, None, None] * perturbations, 0, 1)
+    return new_imgs
