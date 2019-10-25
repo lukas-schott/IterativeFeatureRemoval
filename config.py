@@ -24,8 +24,8 @@ class DefaultArguments:
 
     reinit_network = True
     # percentage_to_append = 0.2           #
-    n_loops = 10                    # DDN: 50
-    n_epochs = 10                   # DDN: 1
+    eval_interval = 2
+    n_epochs = 50                   # DDN: 50
     batch_size = 128                # DDN: 128
     weight_decay = 1e-6            # DDN: 1e-6
     siamese_activations_weight = 1
