@@ -1,2 +1,19 @@
-# python3 main.py --reinit_network False --name MNIST --training_mode adversarial_training --adv_train_epsilon 2.4 --lr 0.01 --n_epochs 5 --n_loops 15 --name DDN --real_exp True --adv_attack_iter 100 --lr_step 30
-# python3 main.py --reinit_network False --training_mode adversarial_training --adv_train_epsilon 2.4 --lr 0.01 --n_epochs 5 --n_loops 15 --name DDN --real_exp True --adv_attack_iter 100 --lr_step 30 --adv_train_attack_name PGD
+
+# DDN adv training
+python3 main.py --reinit_network False --training_mode adversarial_training --adv_train_epsilon 2.4 --lr 0.01 --n_epochs 5 --n_loops 15 --name DDN --real_exp True --adv_attack_iter 100 --attack_iter 120 --lr_step 30
+
+# PGD adv training
+python3 main.py --reinit_network False --training_mode adversarial_training --adv_train_epsilon 2.4 --lr 0.01 --n_epochs 5 --n_loops 15 --name PGD --real_exp True --adv_attack_iter 100 --attack_iter 120 --lr_step 30 --adv_train_attack_name PGD
+
+# siamese adversarial training DDN
+python3 main.py --reinit_network False --training_mode siamese_adversarial_training --adv_train_epsilon 2.4 --lr 0.01 --n_epochs 5 --n_loops 15 --name SiameseDDN --real_exp True --adv_attack_iter 100 --attack_iter 120 --lr_step 30
+
+# normal training
+python3 main.py --reinit_network False --training_mode normal --lr 0.01 --n_epochs 5 --n_loops 15 --name Normal --real_exp True --attack_iter 120 --lr_step 30
+
+# append_dataset siamese
+python3 main.py --reinit_network False --training_mode append_dataset --lr 0.01 --n_epochs 5 --n_loops 15 --name Normal --real_exp True --attack_iter 120 --lr_step 30 --adv_attack_iter 100
+
+# siamese adversarial training DDN, high activaiton loss
+python3 main.py --reinit_network False --training_mode siamese_adversarial_training --adv_train_epsilon 2.4 --lr 0.01 --n_epochs 5 --n_loops 15 --name SiameseDDNHighActivationLoss --real_exp True --adv_attack_iter 100 --attack_iter 120 --lr_step 30 --siamese_activations_weight 40
+

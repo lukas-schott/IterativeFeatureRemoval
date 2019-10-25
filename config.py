@@ -25,7 +25,7 @@ class DefaultArguments:
     n_epochs = 10                   # DDN: 1
     batch_size = 128                # DDN: 128
     weight_decay = 1e-6            # DDN: 1e-6
-
+    siamese_activations_weight = 1
     batch_size_test = 1000
 
     # optimizer
@@ -44,7 +44,7 @@ class DefaultArguments:
     attack_iter = 80
     attack_l2_step_size = 0.05
     attack_linf_step_size = 0.05
-    epsilon_accuracy_l2 = 2.0
+    epsilon_accuracy_l2 = 1.5
     epsilon_accuracy_linf = 0.3
     epsilon_max_l2 = 10.
 

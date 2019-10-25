@@ -104,7 +104,7 @@ class SiameseTrainer(Trainer):
         activation_loss = 0
         for activation in activations:
             activation_loss += torch.mean((activation[::2] - activation[1::2])**2)
-        loss = class_loss + activation_loss
+        loss = class_loss + self.config.siamese_activations_weight * activation_loss
         return loss
 
     def track_statistics(self, b, l, outputs):
