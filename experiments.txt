@@ -1,19 +1,26 @@
+# normal: gpu15_1
+python3 main.py --name Normal --real_exp True
 
-# DDN adv training
-python3 main.py --reinit_network False --training_mode adversarial_training --adv_train_epsilon 2.4 --lr 0.01 --n_epochs 5 --n_loops 15 --name DDN --real_exp True --adv_attack_iter 100 --attack_iter 120 --lr_step 30
+# DDN adv training: gpu15_1
+python3 main.py --n_epochs 100 --attack_eval_iter 200 --training_mode adversarial --name AdvTrainDDN --real_exp True
 
-# PGD adv training
-python3 main.py --reinit_network False --training_mode adversarial_training --adv_train_epsilon 2.4 --lr 0.01 --n_epochs 5 --n_loops 15 --name PGD --real_exp True --adv_attack_iter 100 --attack_iter 120 --lr_step 30 --adv_train_attack_name PGD
+# PGD adv training: gpu16_0
+python3 main.py --n_epochs 100 --attack_eval_iter 200 --training_mode adversarial --attack_train_name PGD_2.4 --name AdvTrainPGD --real_exp True
 
-# siamese adversarial training DDN
-python3 main.py --reinit_network False --training_mode siamese_adversarial_training --adv_train_epsilon 2.4 --lr 0.01 --n_epochs 5 --n_loops 15 --name SiameseDDN --real_exp True --adv_attack_iter 100 --attack_iter 120 --lr_step 30
+# DDN adv training, activation matching: gpu16_0
+python3 main.py --n_epochs 100 --attack_eval_iter 200 --training_mode adversarial --activation_matching True --name AdvTrainDDNActivationMatch --real_exp True
 
-# normal training
-python3 main.py --reinit_network False --training_mode normal --lr 0.01 --n_epochs 5 --n_loops 15 --name Normal --real_exp True --attack_iter 120 --lr_step 30
+# DDN adversarial projection: sys1_1
+python3 main.py --n_epochs 100 --attack_eval_iter 200 --training_mode adversarial_projection --name AdvTrainDDNProjectOut --real_exp True
 
-# append_dataset siamese
-python3 main.py --reinit_network False --training_mode append_dataset --lr 0.01 --n_epochs 5 --n_loops 15 --name Normal --real_exp True --attack_iter 120 --lr_step 30 --adv_attack_iter 100
+# DDN adversarial projection, activation matching: sys1_1
+python3 main.py --n_epochs 100 --attack_eval_iter 200 --training_mode adversarial_projection --activation_matching True --name AdvTrainDDNProjectOutActivationMatch --real_exp True
 
-# siamese adversarial training DDN, high activaiton loss
-python3 main.py --reinit_network False --training_mode siamese_adversarial_training --adv_train_epsilon 2.4 --lr 0.01 --n_epochs 5 --n_loops 15 --name SiameseDDNHighActivationLoss --real_exp True --adv_attack_iter 100 --attack_iter 120 --lr_step 30 --siamese_activations_weight 40
+# orthogonal features
+python3 main.py --n_epochs 100 --attack_eval_iter 200 --training_mode redundancy  --robustness_eval_interval 10 --real_exp True --name Redundancy
+
+# more features
+python3 main.py --n_epochs 100 --attack_eval_iter 200 --training_mode redundancy --n_redundant 10 --robustness_eval_interval 10 --real_exp True --name Redundancy
+
+
 

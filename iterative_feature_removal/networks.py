@@ -1,12 +1,13 @@
+import torch
 import torch.nn as nn
 from torch.nn import functional as F
-from collections import OrderedDict
-from iterative_feature_removal import utils as u
 
 
 def get_model(config):
-    if config.model == 'CNN' or config.model == 'cnn':
+    if config.model == 'CNN' or config.model == 'cnn' and not config.training_mode:
         return VanillaCNN()
+    elif config.model == 'CNN' or config.model == 'cnn' and config.training_mode:
+        return RedundancyNetworks(config.n_redundant)
     elif config.model == 'MLP' or config.model == 'mlp':
         return MLP()
     else:
@@ -69,7 +70,7 @@ class VanillaCNN(nn.Module):
                 nn.init.kaiming_normal_(m.weight)
                 if m.bias is not None:
                     nn.init.constant_(m.bias, 0)
-        nn.init.constant_(self.last.weight, 0)
+        # nn.init.constant_(self.last.weight, 0)
         nn.init.constant_(self.last.bias, 0)
 
     def forward(self, input, return_activations=False):
@@ -83,3 +84,24 @@ class VanillaCNN(nn.Module):
         if return_activations:
             return logits, (layer_1, layer_2, layer_3, layer_4, layer_5)
         return logits
+
+
+class RedundancyNetworks(nn.Module):
+    def __init__(self, n_redundant):
+        super().__init__()
+        self.n_redundant = n_redundant
+        self.networks = [self.add_module(f'net_{i}', VanillaCNN()) for i, _ in enumerate(range(self.n_redundant))]
+        self.cached_batches = None
+
+    def forward(self, input, return_individuals=False):
+        shape = input.shape
+        self.cached_batches = input[:, None].expand((shape[0], self.n_redundant, *shape[1:]))
+        if self.training:
+            self.cached_batches.requires_grad_(True)
+        outs = [self._modules[f'net_{i}'](self.cached_batches[:, i]) for i in range(self.n_redundant)]
+        outs = torch.stack(outs, dim=1)
+        logits = torch.sum(outs, dim=1)
+        if return_individuals:
+            return logits, outs
+        else:
+            return logits

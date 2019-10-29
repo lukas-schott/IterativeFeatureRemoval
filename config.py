@@ -18,13 +18,16 @@ class DefaultArguments:
 
     # training
     model = 'cnn'
-    training_mode = 'normal'       # normal, adverarial, adversarial_projection
+    training_mode = 'normal'       # normal, adversarial, adversarial_projection, redundancy
     activation_matching = False
     # old append_dataset, project_and_activation_matching, normal, project_out, adversarial_training (=DDN), 'siamese_adversarial_training'
+    n_redundant = 4
+    cosine_dissimilarity_weight = 0.1
+
 
     reinit_network = True
     # percentage_to_append = 0.2           #
-    eval_interval = 2
+    accuracy_eval_interval = 1
     n_epochs = 50                   # DDN: 50
     batch_size = 128                # DDN: 128
     weight_decay = 1e-6            # DDN: 1e-6
@@ -38,25 +41,27 @@ class DefaultArguments:
     lr_step = 30             # DNN: 30
     lr_decay = 0.1
 
-    # attack
-    attacks_names = ['BIM', 'PGD_1.5', 'PGD_2.0', 'PGD_2.5', 'PGD_3.0', 'DDN_L2']
-    attack_for_new_dataset = 'DDN_L2'
-    max_eps_new_dataset = 10.
+    # attacks
     lp_metric = 'l2'
     attack_batch_size = 1000
-    attack_iter = 80
-    attack_l2_step_size = 0.05
-    attack_linf_step_size = 0.05
-    epsilon_accuracy_l2 = 1.5
-    epsilon_accuracy_linf = 0.3
-    epsilon_max_l2 = 10.
+
+    # attack eval
+    robustness_eval_interval = 2
+    attacks_eval_names = ['BIM', 'PGD_1.5', 'PGD_2.0', 'PGD_2.5', 'PGD_3.0', 'DDN_L2']
+    attack_eval_max_eps_l2 = 10
+    attack_eval_iter = 100                     # DDN 300
+    attack_eval_l2_step_size = 0.05
+    attack_eval_linf_step_size = 0.01
+    epsilon_threshold_accuracy_l2 = 1.5
+    epsilon_threshold_accuracy_linf = 0.3
+
+    # attack train
+    attack_train_name = 'DDN_L2'  # PGDd.d, BIM, DDN_L2
+    attack_train_max_eps_l2 = 2.4
+    attack_train_iter = 200
+    attack_train_l2_step_size = 0.05
 
     # adv training
-    adv_train_attack_name = 'PGD'    # DDN: DDN_L2
-    adv_train_epsilon = 1.5          # 2.4
-    adv_attack_iter = 20              # DDN: 100
-    adv_l2_step_size = 0.05
-    # adv_epsilon = 2.
 
     n_classes = 10
     end = 60000

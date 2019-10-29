@@ -1,4 +1,5 @@
 import torch
+from torch.nn import functional as F
 from iterative_feature_removal import utils as u
 from iterative_feature_removal.attacks import get_attack, orthogonal_projection
 from torch import optim
@@ -17,9 +18,12 @@ def get_trainer(config):
     elif config.training_mode == 'adversarial_projection' and not config.activation_matching:
         print('Adversarial projection trainer')
         return AdversarialOrthogonalProjectionTrainer
-    elif config.training_mode == 'adversarial_projection' and not config.activation_matching:
+    elif config.training_mode == 'adversarial_projection' and config.activation_matching:
         print('Adversarial projection activation matching trainer')
         return ActivationMatchingAdversarialOrthogonalProjectionTrainer
+    elif config.training_mode == 'redundancy':
+        print('Redundancy Trainer')
+        return RedundancyTrainer
     else:
         print('mode', config.training_mode)
         raise NotImplementedError
@@ -50,13 +54,20 @@ class Trainer:
         assert id(model) == id(self.model)  # assure its pointer
         self.data_loader = data_loader
         self.config = config
+        self.n_correct = 0
+        self.n_total = 0
+        self.epoch_stats = {}
+
+    def reset_counters(self):
+        self.n_correct = 0.
+        self.n_total = 0.
+        self.epoch_stats = {'cross_entropy': []}
 
     def train_epoch(self):
-        self.optimizer.zero_grad()
         self.model.train()
         self.optimizer.zero_grad()
+        self.reset_counters()
 
-        self.n_correct, self.n_total = 0., 0.
         for i, (b, l) in enumerate(self.data_loader):
             self.train_iter(b, l)
 
@@ -68,7 +79,9 @@ class Trainer:
 
     def loss(self, logits, l):
         assert not torch.isnan(logits).any().bool().item()
-        return self.class_loss_fct(logits, target=l)
+        ce_loss = self.class_loss_fct(logits, target=l)
+        self.epoch_stats['cross_entropy'].append(ce_loss.item())
+        return ce_loss
 
     def preprocess_data(self, b, l):
         u.check_bounds(b)
@@ -83,12 +96,17 @@ class Trainer:
         self.optimizer.zero_grad()
         loss.backward()
         self.optimizer.step()
+        self.optimizer.zero_grad()
         self.track_statistics(b, l, output)
 
     def track_statistics(self, b, l, logits):
         with torch.no_grad():
             self.n_correct += float(torch.sum(torch.argmax(logits, dim=1) == l))
             self.n_total += b.shape[0]
+
+    def write_stats(self, writer, epoch):
+        writer.add_scalar('train/accuracy', self.n_correct / self.n_total, epoch)
+        writer.add_scalar('train/cross_entropy_loss', torch.mean(torch.stack(self.epoch_stats['cross_entropy'])), epoch)
 
 
 class ActivationMatchingTrainer(Trainer):
@@ -124,10 +142,10 @@ class AdversarialTrainer(Trainer):
         logits = self.model(b)
         assert not torch.isnan(logits).any().bool().item()
 
-        adversary = get_attack(self.model, self.config.lp_metric, self.config.adv_train_attack_name,
-                               self.config.adv_attack_iter,
-                               l2_step_size=self.config.adv_l2_step_size,
-                               max_eps_l2=self.config.adv_train_epsilon,
+        adversary = get_attack(self.model, self.config.lp_metric, self.config.attack_train_name,
+                               self.config.attack_train_iter,
+                               l2_step_size=self.config.attack_train_l2_step_size,
+                               max_eps_l2=self.config.attack_train_max_eps_l2,
                                n_classes=self.config.n_classes)
         x_adv = adversary.perturb(b, l).detach()
         self.optimizer.zero_grad()
@@ -140,22 +158,71 @@ class AdversarialTrainer(Trainer):
 class ActivationMatchingAdversarialTrainer(ActivationMatchingTrainer, AdversarialTrainer):
     def preprocess_data(self, b, l):
         x_adv, l = AdversarialTrainer.preprocess_data(self, b, l)
-        b_new = torch.stack([b, x_adv], dim=1)
+        b_new = torch.stack([b.to(u.dev()), x_adv], dim=1)
         clean_and_adv, l = ActivationMatchingTrainer.preprocess_data(self, b_new, l)
         return clean_and_adv, l
 
 
 class AdversarialOrthogonalProjectionTrainer(AdversarialTrainer):
     def preprocess_data(self, b, l):
+        b, l = b.to(u.dev()), l.to(u.dev())
         x_adv, l = super().preprocess_data(b, l)
-        x_adv = orthogonal_projection(b, x_adv)
+        x_adv = orthogonal_projection(b, x_adv).detach()
         return x_adv, l
 
 
 class ActivationMatchingAdversarialOrthogonalProjectionTrainer(ActivationMatchingTrainer,
                                                                AdversarialOrthogonalProjectionTrainer):
     def preprocess_data(self, b, l):
+        b, l = b.cuda(), l.cuda()
         x_adv, l = AdversarialOrthogonalProjectionTrainer.preprocess_data(self, b, l)
         b_new = torch.stack([b, x_adv], dim=1)
         clean_and_adv, l = ActivationMatchingTrainer.preprocess_data(self, b_new, l)
         return clean_and_adv, l
+
+
+class RedundancyTrainer(Trainer):
+    def forward(self, b):
+        return self.model(b, return_individuals=True)
+
+    def reset_counters(self):
+        super().reset_counters()
+        self.epoch_stats['abs_cosine_similarity'] = []
+
+    def loss(self, outputs, l):
+        logits, individual_logits = outputs
+        assert not torch.isnan(logits).any().bool().item()
+
+        l_ind = l[:, None].expand((l.shape[0], self.model.n_redundant))
+        ce_ind = F.cross_entropy(individual_logits.view(-1, self.config.n_classes), l_ind.flatten())
+
+        grads_wrt_input = torch.autograd.grad([ce_ind], self.model.cached_batches, create_graph=True, retain_graph=True)[0]
+        sensitivity_vectors = grads_wrt_input.view(l.shape[0], self.model.n_redundant, -1)
+        abs_cosine_similarity = torch.mean(calc_abs_cosine_similarity(sensitivity_vectors))
+        loss = ce_ind + self.config.cosine_dissimilarity_weight * abs_cosine_similarity
+
+        self.epoch_stats['cross_entropy'].append(ce_ind.detach())
+        self.epoch_stats['abs_cosine_similarity'].append(abs_cosine_similarity.detach())
+        return loss
+
+    def track_statistics(self, b, l, outputs):
+        logits, _ = outputs
+        super().track_statistics(b, l, logits)
+
+    def write_stats(self, writer, epoch):
+        abs_cosine_similarities = torch.mean(torch.stack(self.epoch_stats['abs_cosine_similarity']))
+        writer.add_scalar('train/abs_cosine_similarity', abs_cosine_similarities, epoch)
+        super().write_stats(writer, epoch)
+
+
+def calc_abs_cosine_similarity(tensor, epsilon=1e-10):
+    """
+    :param tensor: must be shape (bs, n_vectors, n_dims)
+    :param epsilon: avoid division by zero
+    :return: abs of cosine similarity
+    """
+    assert len(tensor.shape) == 3
+    a_norm = torch.sqrt(torch.sum(tensor**2, dim=2))
+    norms = a_norm[:, :, None] * a_norm[:, None, :]
+    scalar_prod = torch.sum(tensor[:, None, :, :] * tensor[:, :, None, :], dim=3)
+    return torch.abs(scalar_prod / (norms + epsilon))
