@@ -103,13 +103,15 @@ def evaluate_robustness(config, model, data_loader, adversaries):
                                                             original_targets,
                                                             n_classes=config.n_classes, n_rows=8)
     display_adv_images = tu.make_grid(display_adv_images, pad_value=2, nrow=10)
-    l2_robustness, l2_accuracy = get_l2_scores(perturbed_images, original_images, is_adversarial)
-    linf_robustness, linf_accuracy = get_linf_scores(perturbed_images, original_images, is_adversarial)
+    l2_robustness, l2_accuracy = get_l2_scores(perturbed_images, original_images, is_adversarial,
+                                               eps_threshold=config.epsilon_threshold_accuracy_l2)
+    linf_robustness, linf_accuracy = get_linf_scores(perturbed_images, original_images, is_adversarial,
+                                                     eps_threshold=config.epsilon_threshold_accuracy_linf)
 
     success_rate = float(torch.sum(is_adversarial)) / len(is_adversarial)
 
     return display_adv_images, display_adv_perturbations, l2_robustness, l2_accuracy, linf_robustness, linf_accuracy, \
-           success_rate, data_loader
+           success_rate
 
 
 def generate_new_dataset(config, model, data_loader, adversary):
@@ -122,21 +124,21 @@ def generate_new_dataset(config, model, data_loader, adversary):
     return data_loader
 
 
-def get_l2_scores(a, b, is_adversarial=None):
+def get_l2_scores(a, b, is_adversarial=None, eps_threshold=1.5):
     assert a.shape == b.shape
     l2_dists = get_l2_dists(a, b)
     if is_adversarial is not None:
-        l2_dists[is_adversarial.bitwise_not()] = 10
-        robust_accuracy = float(torch.sum(l2_dists > 1.5)) / l2_dists.shape[0]
+        l2_dists[is_adversarial.bitwise_not()] = 100
+        robust_accuracy = float(torch.sum(l2_dists > eps_threshold)) / l2_dists.shape[0]
     return torch.median(l2_dists), robust_accuracy
 
 
-def get_linf_scores(a, b, is_adversarial=None):
+def get_linf_scores(a, b, is_adversarial=None, eps_threshold=0.3):
     assert a.shape == b.shape
     linf_dists = torch.max(torch.abs(a - b).flatten(1), dim=1)[0]
     if is_adversarial is not None:
         linf_dists[is_adversarial.bitwise_not()] = 1
-        robust_accuracy = float(torch.sum(linf_dists > 0.3)) / linf_dists.shape[0]
+        robust_accuracy = float(torch.sum(linf_dists > eps_threshold)) / linf_dists.shape[0]
     return torch.median(linf_dists), robust_accuracy
 
 
