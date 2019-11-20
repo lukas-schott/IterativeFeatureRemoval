@@ -10,22 +10,30 @@ tz = timezone("Europe/Berlin")
 
 
 class DefaultArguments:
+    exp_series = 'trash'
     name = 'trash'
     loss_fct = 'ce'                 # 'soft_ce', 'ce'
     real_exp = False
 
+    # data
     dataset_modification = 'None'   # single_feat, double_feat, shift_mnist
+    dataset = 'MNIST'
+    mnist_c = False
 
     # training
     model = 'cnn'
     training_mode = 'normal'       # normal, adversarial, adversarial_projection, redundancy
     activation_matching = False
     # old append_dataset, project_and_activation_matching, normal, project_out, adversarial_training (=DDN), 'siamese_adversarial_training'
-    n_redundant = 4
+    n_redundant = 1
+    model_load_path = ''
+
+    # reinit_network = True
+
+    # redundancy networks
+    train_greedily = False
     cosine_dissimilarity_weight = 0.1
 
-
-    reinit_network = True
     # percentage_to_append = 0.2           #
     accuracy_eval_interval = 1
     n_epochs = 50                   # DDN: 50
@@ -46,7 +54,7 @@ class DefaultArguments:
     attack_batch_size = 1000
 
     # attack eval
-    robustness_eval_interval = 2
+    robustness_eval_interval = 5
     attacks_eval_names = ['BIM', 'PGD_1.5', 'PGD_2.0', 'PGD_2.5', 'PGD_3.0', 'DDN_L2']
     attack_eval_max_eps_l2 = 10
     attack_eval_iter = 100                     # DDN 300
@@ -56,23 +64,21 @@ class DefaultArguments:
     epsilon_threshold_accuracy_linf = 0.3
 
     # attack train
+    epoch_start_adv_train = 0
     attack_train_name = 'DDN_L2'  # PGDd.d, BIM, DDN_L2
     attack_train_max_eps_l2 = 2.4
-    attack_train_iter = 200
+    attack_train_iter = 100
     attack_train_l2_step_size = 0.05
-
+    attack_percentage_clean = 0.
     # adv training
 
     n_classes = 10
-    end = 60000
+    end = 100000
 
 
-def parse_arguments(**passed_args):
-    print('passed args', passed_args)
-
-    default_arguments = class_to_dict(DefaultArguments)
-    if passed_args:
-        default_arguments = {**default_arguments, **passed_args}
+def parse_arguments(passed_args=None):
+    # print('passed args', passed_args)
+    default_arguments = c2d(DefaultArguments)
 
     parser = ArgumentParser(description='Robustness Through Adversarial Training')
     for key, value in default_arguments.items():
@@ -86,58 +92,67 @@ def parse_arguments(**passed_args):
     else:
         args = parser.parse_args()
 
-    args = args.__dict__
+    if passed_args:
+        args = {**args.__dict__, **passed_args}
+    else:
+       args = args.__dict__  # convert to dct to iterate and parse
+
     for key, val in args.items():
         if val == 'false' or val == 'False':
             args[key] = False
         if val == 'true' or val == 'True':
             args[key] = True
+    args = AttrDict(args)  # convert back to class because its more convenient to write . insted of ['...']
 
     # change some args
-    if args['dataset_modification'] == 'double_feat' or args['dataset_modification'] == 'single_feat':
+    if args.dataset_modification == 'double_feat' or args.dataset_modification == 'single_feat':
         print('changed end')
-        args['end'] = 1000
-        args['n_epoch'] = 20
+        args.end = 1000
+        args.n_epoch = 20
 
-    if args['lr_step'] == 0:
-        args['lr_step'] = args['n_epoch']
+    if args.lr_step == 0:
+        args.lr_step = args.n_epoch
 
-    args['exp_name'] = get_run_name(default_arguments, args)
-
+    args.exp_name = get_run_name(c2d(DefaultArguments), args)
     proj_dir = os.getcwd()
-    if args['real_exp']:
-        exp_folder = proj_dir + '/exp_fr/'
-    else:
-        exp_folder = proj_dir + '/test_exp/'
-    args['experiment_folder'] = exp_folder + args['exp_name']
+    exp_folder = proj_dir + '/exp/' + args.exp_series + '/'
 
-    print('Parsed arguments:')
+    args.experiment_folder = exp_folder + args.exp_name
+
     args = AttrDict(args)
     args.proj_dir = proj_dir
+    if args.training_mode != 'redundancy':
+        args.n_redundant = 1
     print('args', args)
+    print('exp name', args.exp_name)
     return args
 
 
 def get_run_name(default_args, args):
     exp_name = args['name'] + '_'
+    default_args.pop('exp_series')
     for key in default_args:
+        if len(exp_name) > 100:
+            break
+
         old_val = default_args[key]
         if old_val != args[key] and key != 'device' \
                 and key != 'name' and key != 'expfolder':
             val = args[key]
             if isinstance(val, float):
-                exp_name += f'{key}{val:.3f}-'
+                exp_name += f'{key}{val:.2f}-'
             elif isinstance(val, str):
                 exp_name += f'{key}' + val[:5] + '-'
             else:
                 exp_name += f'{key}' + str(val) + '-'
+
 
     tz = timezone("Europe/Berlin")
     return exp_name + '--' + datetime.datetime.now(tz=tz).strftime(
         "%Y-%m-%d-%H-%M-%S")
 
 
-def class_to_dict(o):
+def c2d(o):
     keys = [f for f in dir(o) if not callable(getattr(o, f)) and not f.startswith('__')]
     new_dict = {}
     for key in keys:
