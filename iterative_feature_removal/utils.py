@@ -1,5 +1,6 @@
 import torch
 from torch.nn import functional as F
+from iterative_feature_removal.train import get_trainer, get_optimizer
 
 
 def dev():
@@ -61,9 +62,30 @@ def label_2_onehot(l: torch.Tensor, n_classes: int = 10):
     return y_onehot.scatter_(1, l[:, None], 1)
 
 
-def save_state(model: torch.nn.Module, optimizer: torch.optim.Optimizer, save_path: str, replace_best: bool = False):
-    torch.save(model.state_dict(), save_path + '/save_model_most_recent.pt')
-    torch.save(optimizer.state_dict(), save_path + '/save_optimizer_most_recent.pt')
+def save_state(model: torch.nn.Module, optimizer: torch.optim.Optimizer, save_path: str, epoch: int,
+               replace_best: bool = False):
+    torch.save({'model': model.state_dict(), 'optimizer': optimizer, 'epoch': epoch},
+               save_path + f'/save_model_{epoch}.pt')
     if replace_best:
-        torch.save(model.state_dict(), save_path + '/save_model_best.pt')
-        torch.save(optimizer.state_dict(), save_path + '/save_optimizer_best.pt')
+        torch.save({'model': model.state_dict(), 'optimizer': optimizer, 'epoch': epoch},
+                   save_path + '/save_model_best.pt')
+
+
+def update_for_greedy_training(trainer, model, optimizer, config, epoch, data_loaders, loss_fct):
+    if epoch == 0:
+        config.training_mode = 'normal'
+        optimizer = get_optimizer(config, model.networks[0].parameters())
+        model.n_redundant = 1
+        Trainer = get_trainer(config)
+        trainer = Trainer(model, data_loaders['train'], optimizer, config, loss_fct)
+
+        config.training_mode = 'redundancy'
+    if epoch > 1:
+        if model.n_redundant == config.n_redundant:
+            exit()
+        optimizer = get_optimizer(config, model.networks[model.n_redundant].parameters())
+        model.n_redundant += 1
+        Trainer = get_trainer(config)
+        trainer = Trainer(model, data_loaders['train'], optimizer, config, loss_fct)
+
+    return trainer, model, optimizer, config
