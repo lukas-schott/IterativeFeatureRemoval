@@ -141,7 +141,8 @@ class RedundancyNetworks(nn.Module):
         shape = input.shape
         self.cached_batches = input[None, :].expand((self.n_redundant, shape[0], *shape[1:]))
         self.cached_batches.requires_grad_(True)
-        outs = [module(b) for b, module in zip(self.cached_batches, self.networks)]
+        # n_redundant can be tuned from outside
+        outs = [module(b) for b, module in zip(self.cached_batches, self.networks[:self.n_redundant])]
         outs = torch.stack(outs, dim=1)
         logits = torch.sum(outs, dim=1)
         if return_individuals:

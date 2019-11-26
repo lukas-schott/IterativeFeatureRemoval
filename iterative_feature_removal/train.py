@@ -203,18 +203,32 @@ class RedundancyTrainer(Trainer):
         logits, individual_logits = outputs
         assert not torch.isnan(logits).any().bool().item()
 
-        l_ind = l[:, None].expand((l.shape[0], self.model.n_redundant))    # same as n_redundant
-        ce_ind = F.cross_entropy(individual_logits.view(-1, self.config.n_classes), l_ind.flatten())
+        l_ind = l[:, None].expand((l.shape[0], self.model.n_redundant)).flatten()    # same as n_redundant
+        ce_ind = F.cross_entropy(individual_logits.view(-1, self.config.n_classes), l_ind)  # all in b dim
         loss = ce_ind
 
-        grads_wrt_input = torch.autograd.grad([ce_ind], self.model.cached_batches, create_graph=True, retain_graph=True)[0]
+        # enforce orthogonality of Jacobean with low cosine similarity
+        x_inds = range(individual_logits.shape[0] * self.model.n_redundant)   # batch and redundants in one dim
+        if self.config.all_logits:
+            correct_logits = torch.zeros((self.model.n_redundant * l.shape[0], self.config.n_classes), dtype=torch.float32).to(u.dev())
+            correct_logits[x_inds, l_ind] = 2 * individual_logits.reshape(-1, self.config.n_classes)[x_inds, l_ind]
+            correct_logits -= individual_logits.reshape(-1, self.config.n_classes)  # correct logit - wrong logits
+        else:
+            correct_logits = individual_logits.reshape(-1, self.config.n_classes)[x_inds, l_ind]
+
+
+        grad_loss = torch.sum(correct_logits)
+
+        grads_wrt_input = torch.autograd.grad([grad_loss], self.model.cached_batches, create_graph=True,
+                                              retain_graph=True)[0]
         sensitivity_vectors = grads_wrt_input.view(l.shape[0], self.model.n_redundant, -1)
         cosine_sim = calc_abs_cosine_similarity(sensitivity_vectors)
         mask = (1 - torch.eye(self.model.n_redundant)).type(torch.bool)[None].expand(l.shape[0],
                                                                                      self.model.n_redundant,
                                                                                      self.model.n_redundant)
         cosine_sim = cosine_sim[mask]  # get off diagonal elements
-        abs_cosine_similarity = torch.mean(cosine_sim)
+
+        abs_cosine_similarity = cosine_sim.mean()
         loss += self.config.cosine_dissimilarity_weight * abs_cosine_similarity
 
         self.epoch_stats['gradient_magnitude'].append(grads_wrt_input.abs().sum())
@@ -228,10 +242,10 @@ class RedundancyTrainer(Trainer):
 
     def write_stats(self, writer, epoch):
         abs_cosine_similarities = torch.mean(torch.stack(self.epoch_stats['abs_cosine_similarity']))
+        print('cosine sim',  torch.mean(torch.stack(self.epoch_stats['abs_cosine_similarity'])))
         writer.add_scalar('train/abs_cosine_similarity', abs_cosine_similarities, epoch)
         gradient_magnitude = torch.mean(torch.stack(self.epoch_stats['gradient_magnitude']))
         writer.add_scalar('train/gradient_magnitude', gradient_magnitude, epoch)
-        print('train', abs_cosine_similarities)
         super().write_stats(writer, epoch)
 
 

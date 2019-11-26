@@ -32,11 +32,12 @@ class DefaultArguments:
 
     # redundancy networks
     train_greedily = False
+    all_logits = False
     cosine_dissimilarity_weight = 0.1
 
     # percentage_to_append = 0.2           #
     accuracy_eval_interval = 1
-    n_epochs = 50                   # DDN: 50
+    n_epochs = 100                   # DDN: 50
     batch_size = 128                # DDN: 128
     weight_decay = 1e-6            # DDN: 1e-6
     siamese_activations_weight = 1
@@ -55,7 +56,7 @@ class DefaultArguments:
 
     # attack eval
     robustness_eval_interval = 5
-    attacks_eval_names = ['BIM', 'PGD_1.5', 'PGD_2.0', 'PGD_2.5', 'PGD_3.0', 'DDN_L2']
+    attacks_eval_names = ['DDN_L2']
     attack_eval_max_eps_l2 = 10
     attack_eval_iter = 100                     # DDN 300
     attack_eval_l2_step_size = 0.05

@@ -1,8 +1,9 @@
-# normal: gpu15_1
+# normal: sys2_0
 python3 main.py --name Normal --real_exp True
+python3 main.py --name Normal --real_exp True --n_epochs 100 --robustness_eval_interval 10
 
-# DDN adv training: gpu15_1
-python3 main.py --n_epochs 100 --attack_eval_iter 200 --training_mode adversarial --name AdvTrainDDN --real_exp True
+# DDN adv training: gpu16_0
+python3 main.py --n_epochs 100 --attack_eval_iter 200 --training_mode adversarial --lr 0.001 --robustness_eval_interval 10 --name AdvTrainDDN --real_exp True
 
 # PGD adv training: gpu16_0
 python3 main.py --n_epochs 100 --attack_eval_iter 200 --training_mode adversarial --attack_train_name PGD_2.4 --name AdvTrainPGD --real_exp True
@@ -22,5 +23,15 @@ python3 main.py --n_epochs 100 --attack_eval_iter 200 --training_mode redundancy
 # more features
 python3 main.py --n_epochs 100 --attack_eval_iter 200 --training_mode redundancy --n_redundant 10 --robustness_eval_interval 10 --real_exp True --name Redundancy
 
+# majority vote
+python3 main.py --n_epochs 100 --attack_eval_iter 200 --training_mode redundancy --n_redundant 10 --robustness_eval_interval 10 --real_exp True --name VoteRedundancy
+
+# majority vote not diversity:
+python3 main.py --n_epochs 100 --attack_eval_iter 200 --training_mode redundancy --n_redundant 10 --robustness_eval_interval 10 --real_exp True --name NoDiversityVoteRedundancy
 
 
+# majority vote
+python3 main.py --n_epochs 100 --attack_eval_iter 200 --training_mode redundancy --n_redundant 5 --robustness_eval_interval 10 --lr 0.001 --real_exp True --cosine_dissimilarity_weight 0. --name VoteRedundancy
+
+# majority vote leaky
+python3 main.py --n_epochs 100 --attack_eval_iter 200 --training_mode redundancy --n_redundant 5 --robustness_eval_interval 10 --lr 0.001 --real_exp True --name LeakyVoteRedundancy
