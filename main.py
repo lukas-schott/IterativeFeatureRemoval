@@ -14,7 +14,12 @@ from torch.optim import lr_scheduler
 def main():
     config = parse_arguments()
 
+    # data
     data_loaders = dl.get_data_loader(config)
+    data_loaders_robustness = [('test', data_loaders['test'])]
+    if config.dataset_modification != 'shift_mnist':
+        data_loaders_robustness.append(('clean', data_loaders['clean']))
+
     if config.mnist_c:
         mnist_c_dataloaders = dl.get_mnist_c(config)
 
@@ -61,50 +66,56 @@ def main():
                 accuracy_test = evaluate.evaluate_net(config, model, data_loaders['test'])
                 writer.add_scalar('test/accuracy_current_dataset', accuracy_test, epoch)
 
+                clean_acc_str = ''
                 if config.dataset_modification == 'shift_mnist':
                     accuracy_test_clean = evaluate.evaluate_net(config, model, data_loaders['clean'])
                     writer.add_scalar('clean/accuracy_current_dataset', accuracy_test_clean, epoch)
+                    clean_acc_str = f'clean accuracy {accuracy_test_clean:.3f}'
 
-                print(f'i {epoch} out of {config.n_epochs} acc train {accuracy_train:.3f} test {accuracy_test:.3f}')
+                print(f'i {epoch} out of {config.n_epochs} acc train {accuracy_train:.3f} test {accuracy_test:.3f} '
+                      + clean_acc_str)
 
         # robustness
         if epoch % config.robustness_eval_interval == 0:
-            model.eval()
-            adversaries = [att.get_attack(model, 'l2', attack, config.attack_eval_iter,
-                                          l2_step_size=config.attack_eval_l2_step_size,
-                                          linf_step_size=config.attack_eval_linf_step_size,
-                                          max_eps_l2=config.attack_train_max_eps_l2,
-                                          max_eps_linf=1) for attack in config.attacks_eval_names]
-            # evaluate robustness
-            for name, data_loader in data_loaders.items():
-                if name == 'clean' and config.dataset_modification != 'shift_mnist':
-                    continue
-                print('eval mode', name)
-                display_adv_images, display_adv_perturbations, l2_robustness, l2_accuracy, linf_robustness, \
-                linf_accuracy, success_rate = \
-                    att.evaluate_robustness(config, model, data_loader, adversaries)
-                writer.add_scalar(f'{name}_attack_l2/l2_robustness', l2_robustness, global_step=epoch)
-                writer.add_scalar(f'{name}_attack_l2/linf_robustness', linf_robustness, global_step=epoch)
-                writer.add_scalar(f'{name}_attack_l2/l2_accuracy_eps={config.epsilon_threshold_accuracy_l2}',
-                                  l2_accuracy, global_step=epoch)
-                writer.add_scalar(f'{name}_attack_l2/linf_accuracy_eps={config.epsilon_threshold_accuracy_linf}',
-                                  linf_accuracy, global_step=epoch)
-                writer.add_image(f'{name}_attack_l2/adversarials', display_adv_images, global_step=epoch)
-                writer.add_image(f'{name}_attack_l2/perturbations_rescaled', display_adv_perturbations,
-                                 global_step=epoch)
-                if name == 'test':
-                    replace_best = False
-                    if l2_robustness >= best_l2:
-                        replace_best = True
-                        print('new best l2', l2_robustness, 'will be saved as new best')
-                    print('model saved')
-                    u.save_state(model, optimizer, config.experiment_folder, epoch, replace_best=replace_best)
+
+            models = [('model', model)]
+            if model.n_redundant > 1 and config.training_mode == 'redundancy':
+                models += [(f'model_{i}', net_i) for i, net_i in enumerate(model.networks[:model.n_redundant])]
+
+            for dl_name, data_loader in data_loaders_robustness:
+                for m_name, eval_model in models:
+                    eval_model.eval()
+                    adversaries = [att.get_attack(eval_model, 'l2', attack, config.attack_eval_iter,
+                                                  l2_step_size=config.attack_eval_l2_step_size,
+                                                  linf_step_size=config.attack_eval_linf_step_size,
+                                                  max_eps_l2=config.attack_train_max_eps_l2,
+                                                  max_eps_linf=1) for attack in config.attacks_eval_names]
+                    name = f'{dl_name}_{m_name}'
+                    print('robustness eval mode', name)
+                    display_adv_images, display_adv_perturbations, l2_robustness, l2_accuracy, linf_robustness, \
+                        linf_accuracy, success_rate = att.evaluate_robustness(config, eval_model, data_loader, adversaries)
+                    writer.add_scalar(f'{name}_attack_l2/l2_robustness', l2_robustness, global_step=epoch)
+                    writer.add_scalar(f'{name}_attack_l2/linf_robustness', linf_robustness, global_step=epoch)
+                    writer.add_scalar(f'{name}_attack_l2/l2_accuracy_eps={config.epsilon_threshold_accuracy_l2}',
+                                      l2_accuracy, global_step=epoch)
+                    writer.add_scalar(f'{name}_attack_l2/linf_accuracy_eps={config.epsilon_threshold_accuracy_linf}',
+                                      linf_accuracy, global_step=epoch)
+                    writer.add_image(f'{name}_attack_l2/adversarials', display_adv_images, global_step=epoch)
+                    writer.add_image(f'{name}_attack_l2/perturbations_rescaled', display_adv_perturbations,
+                                     global_step=epoch)
+
+                # if name == 'test':
+                #     replace_best = False
+                #     if l2_robustness >= best_l2:
+                #         replace_best = True
+                #         print('new best l2', l2_robustness, 'will be saved as new best')
+                #     print('model saved')
+                #     u.save_state(model, optimizer, config.experiment_folder, epoch, replace_best=replace_best)
             print('eval done')
 
         # mnist_c
         if epoch % config.robustness_eval_interval == 0 and config.mnist_c:
             evaluate.mnist_c_evaluation(model, mnist_c_dataloaders, config, writer, epoch=epoch)
-
 
         # save
         if epoch % 20 == 0:
