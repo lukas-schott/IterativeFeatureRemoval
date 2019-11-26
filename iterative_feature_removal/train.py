@@ -102,7 +102,7 @@ class Trainer:
 
     def track_statistics(self, b, l, logits):
         with torch.no_grad():
-            self.n_correct += float(torch.sum(torch.argmax(logits, dim=1) == l))
+            self.n_correct += (torch.argmax(logits, dim=1) == l).float().sum()
             self.n_total += b.shape[0]
 
     def write_stats(self, writer, epoch):
@@ -200,8 +200,8 @@ class RedundancyTrainer(Trainer):
         self.epoch_stats['gradient_magnitude'] = []
 
     def loss(self, outputs, l):
-        logits, individual_logits = outputs
-        assert not torch.isnan(logits).any().bool().item()
+        _, individual_logits = outputs
+        assert not torch.isnan(individual_logits).any().bool().item()
 
         l_ind = l[:, None].expand((l.shape[0], self.model.n_redundant)).flatten()    # same as n_redundant
         ce_ind = F.cross_entropy(individual_logits.view(-1, self.config.n_classes), l_ind)  # all in b dim
@@ -216,19 +216,17 @@ class RedundancyTrainer(Trainer):
         else:
             correct_logits = individual_logits.reshape(-1, self.config.n_classes)[x_inds, l_ind]
 
-
         grad_loss = torch.sum(correct_logits)
-
+        # get abs cosine similarity
         grads_wrt_input = torch.autograd.grad([grad_loss], self.model.cached_batches, create_graph=True,
                                               retain_graph=True)[0]
         sensitivity_vectors = grads_wrt_input.view(l.shape[0], self.model.n_redundant, -1)
-        cosine_sim = calc_abs_cosine_similarity(sensitivity_vectors)
-        mask = (1 - torch.eye(self.model.n_redundant)).type(torch.bool)[None].expand(l.shape[0],
-                                                                                     self.model.n_redundant,
-                                                                                     self.model.n_redundant)
-        cosine_sim = cosine_sim[mask]  # get off diagonal elements
+        abs_cosine_similarity = calc_abs_cosine_similarity(sensitivity_vectors)
+        mask = torch.tril(torch.ones(l.shape[0], self.model.n_redundant, self.model.n_redundant),
+                          diagonal=-1).type(torch.bool)
+        abs_cosine_similarity = abs_cosine_similarity[mask]  # get off diagonal elements
+        abs_cosine_similarity = abs_cosine_similarity.mean()
 
-        abs_cosine_similarity = cosine_sim.mean()
         loss += self.config.cosine_dissimilarity_weight * abs_cosine_similarity
 
         self.epoch_stats['gradient_magnitude'].append(grads_wrt_input.abs().sum())
@@ -257,6 +255,6 @@ def calc_abs_cosine_similarity(tensor, epsilon=1e-10):
     """
     assert len(tensor.shape) == 3
     a_norm = torch.sqrt(torch.sum(tensor**2, dim=2))
-    norms = a_norm[:, :, None] * a_norm[:, None, :]
+    norms = a_norm[:, None, :] * a_norm[:, :, None].detach()
     scalar_prod = torch.sum(tensor[:, None, :, :] * tensor[:, :, None, :], dim=3)
     return torch.abs(scalar_prod / (norms + epsilon))

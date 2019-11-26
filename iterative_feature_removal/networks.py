@@ -115,12 +115,9 @@ class VanillaCNN(nn.Module):
 
         if self.n_groups > 1:
             individual_logits = individual_logits.view(input.shape[0], self.n_groups, self.num_labels)
-            individual_logits = individual_logits - torch.min(individual_logits, dim=2, keepdim=True).values
-            individual_logits /= torch.max(individual_logits, dim=2, keepdim=True).values
-            logits = individual_logits.sum(dim=1)
-
+            probabilities = F.softmax(individual_logits).mean(dim=1)
             if return_individuals:
-                return logits, individual_logits
+                return probabilities, individual_logits
         else:
             logits = individual_logits
         if return_activations:
@@ -139,16 +136,20 @@ class RedundancyNetworks(nn.Module):
 
     def forward(self, input, return_individuals=False):
         shape = input.shape
-        self.cached_batches = input[None, :].expand((self.n_redundant, shape[0], *shape[1:]))
+        # convention: b, n_redundant, n_channel, x, y
+        self.cached_batches = input[:, None].expand((input.shape[0], self.n_redundant, *shape[1:]))   # b, nr, nch, x, y
         self.cached_batches.requires_grad_(True)
         # n_redundant can be tuned from outside
-        outs = [module(b) for b, module in zip(self.cached_batches, self.networks[:self.n_redundant])]
+        outs = [module(self.cached_batches[:, i]) for i, module in enumerate(self.networks[:self.n_redundant])]
         outs = torch.stack(outs, dim=1)
-        logits = torch.sum(outs, dim=1)
+        probabilities = F.softmax(outs, dim=2).mean(dim=1)    # add probabilities of individual networks
         if return_individuals:
-            return logits, outs
+            return probabilities, outs
         else:
-            return logits
+            if self.training:
+                return outs.mean(dim=1)     # logits for cross entropy
+            else:
+                return probabilities        # add in probability space to avoid winning of single over-confident network
 
 
 class SmallCIFAR10GreyscaleCNN(nn.Module):
