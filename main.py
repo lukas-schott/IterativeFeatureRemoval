@@ -54,7 +54,7 @@ def main():
                                                                              data_loaders, loss_fct)
 
         # train
-        if epoch > 0 or True:
+        if epoch > 0:
             assert id(model) == id(trainer.model)
             accuracy_train = trainer.train_epoch(epoch=epoch)
             scheduler.step(epoch)
@@ -118,7 +118,7 @@ def main():
             evaluate.mnist_c_evaluation(model, mnist_c_dataloaders, config, writer, epoch=epoch)
 
         # save
-        if epoch % 20 == 0:
+        if epoch % 20 == 0 or epoch == config.n_epochs - 1:
             u.save_state(model, optimizer, config.experiment_folder, epoch)
             print('model saved')
 
