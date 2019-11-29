@@ -7,27 +7,19 @@ from iterative_feature_removal import attacks as att
 import torchvision.transforms as transforms
 
 
-class FloatTensorDataset(data.Dataset):
-    def __init__(self, data, targets):
-        self.data = data
-        self.targets = targets
-
-    def __getitem__(self, index):
-        return self.data[index], self.targets[index]
-
-    def __len__(self):
-        return self.data.size(0)
-
-
 def get_data_loader(config):
     if config.dataset == 'MNIST':
-        mnist_train = datasets.MNIST(config.proj_dir + '/data/', train=True, download=True)
-        mnist_test = datasets.MNIST(config.proj_dir + '/data/', train=False)
-        mnist_test_clean = datasets.MNIST('./data/', train=False)
-        dataset_train = FloatTensorDataset(mnist_train.data.type(torch.float32)[:, None] / 255., mnist_train.targets)
-        dataset_test = FloatTensorDataset(mnist_test.data.type(torch.float32)[:, None] / 255., mnist_test.targets)
-        dataset_test_clean = FloatTensorDataset(mnist_test_clean.data.type(torch.float32)[:, None] / 255.,
-                                                mnist_test_clean.targets)
+        transforms_train = [transforms.ToTensor()]
+        transforms_test = [transforms.ToTensor()]
+        if config.add_gaussian_noise_during_training:
+            scale = config.add_gaussian_noise_during_training
+            transforms_train.append(transforms.Lambda(lambda x:
+                                                      (x + torch.empty_like(x).normal_(0, scale)).clamp_(0, 1)))
+        transforms_train = transforms.Compose(transforms_train)
+
+        dataset_train = datasets.MNIST(config.proj_dir + '/data/', download=True, transform=transforms_train)
+        dataset_test = datasets.MNIST(config.proj_dir + '/data/', train=False, transform=transforms_test)
+        dataset_test_clean = datasets.MNIST('./data/', train=False, transform=transforms_test)
 
     elif config.dataset == 'CIFAR10' or config.dataset == 'greyscale_CIFAR10':
         # transforms
@@ -53,7 +45,7 @@ def get_data_loader(config):
     dataset_test_clean.targets = dataset_test_clean.targets[:end]
 
     if config.dataset_modification != 'None':
-        dataset_train, dataset_test =  create_pixel_indicator(dataset_train, dataset_test, config=config)
+        dataset_train, dataset_test = create_pixel_indicator(dataset_train, dataset_test, config=config)
 
     data_loader_train = data.DataLoader(dataset_train, batch_size=config.batch_size, shuffle=True)
     data_loader_test = data.DataLoader(dataset_test, batch_size=config.batch_size, shuffle=False)
@@ -113,16 +105,15 @@ def create_pixel_indicator(*datasets, config=None):
             if config.dataset_modification == 'single_feat':
                 dataset_copy[:] = 0
                 dataset_copy = torch.clamp(dataset_copy + torch.rand(dataset_copy.shape) * 0.1, 0, 1)
-                dataset_copy[:, 0, coords[0], coords[1]] = 1
-                # dataset_copy[:, 0, coords[0]+1, coords[1]+1] = 1
-                # dataset_copy[:, 0, coords[0]+2, coords[1]+2] = 1
+                dataset_copy[:, 0, coords[0], coords[1]] = 255
             elif config.dataset_modification == 'shift_mnist':
                 print('shift mnists', i)
-                dataset_copy[:, 0, i*2+4, 4] = 1
+                print('dataset copy', dataset_copy.shape, torch.max(dataset_copy))
+                dataset_copy[..., i*2+4, 4] = 255
             elif config.dataset_modification == 'double_feat':
                 dataset_copy[:] = 0
-                dataset_copy[:, 0, i, 0] = 1
-                dataset_copy[:, 0, i, 2] = 1
+                dataset_copy[:, 0, i, 0] = 255
+                dataset_copy[:, 0, i, 2] = 255
                 dataset_copy = torch.clamp(dataset_copy + torch.rand(dataset_copy.shape) * 0.1, 0, 1)
             else:
                 raise Exception(f'dataset {config.dataset_modification} not selectable')
