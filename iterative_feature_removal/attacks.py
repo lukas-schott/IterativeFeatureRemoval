@@ -93,25 +93,36 @@ def evaluate_robustness(config, model, data_loader, adversaries):
 
     adv_perturbations, perturbed_images, original_images, original_targets, is_adversarial = \
         get_adversarial_perturbations(config, model, data_loader, adversaries=adversaries)
+    display_imgs = {}
+    # perturbations
+    _, display_adv_perturbations, _ = u.get_class_sorted_images(adv_perturbations,
+                                                                original_targets,
+                                                                n_classes=config.n_classes, n_rows=8)
+    display_imgs['perturbations_rescaled'] = tu.make_grid(display_adv_perturbations, pad_value=2, nrow=10)
+    # adv images
+    display_adv_images, _, _ = u.get_class_sorted_images(perturbed_images,
+                                                         original_targets,
+                                                         n_classes=config.n_classes, n_rows=8)
+    display_imgs['adversarials'] = tu.make_grid(display_adv_images, pad_value=2, nrow=10)
+    # originals
+    display_original_images, _, _ = u.get_class_sorted_images(original_images,
+                                                              original_targets,
+                                                              n_classes=config.n_classes, n_rows=8)
+    display_imgs['originals'] = tu.make_grid(display_original_images, pad_value=2, nrow=10)
+    # gradients
+    gradients = get_first_derivative(model, original_images, original_targets)
+    _, display_gradient_images, _ = u.get_class_sorted_images(gradients,
+                                                              original_targets,
+                                                              n_classes=config.n_classes, n_rows=8)
+    display_imgs['gradients'] = tu.make_grid(display_gradient_images, pad_value=2, nrow=10)
 
-    _, display_adv_perturbations, _ = u.get_indices_for_class_grid(adv_perturbations,
-                                                                   original_targets,
-                                                                   n_classes=config.n_classes, n_rows=8)
-    display_adv_perturbations = tu.make_grid(display_adv_perturbations, pad_value=2, nrow=10)
-
-    display_adv_images, _, _ = u.get_indices_for_class_grid(perturbed_images,
-                                                            original_targets,
-                                                            n_classes=config.n_classes, n_rows=8)
-    display_adv_images = tu.make_grid(display_adv_images, pad_value=2, nrow=10)
     l2_robustness, l2_accuracy = get_l2_scores(perturbed_images, original_images, is_adversarial,
                                                eps_threshold=config.epsilon_threshold_accuracy_l2)
     linf_robustness, linf_accuracy = get_linf_scores(perturbed_images, original_images, is_adversarial,
                                                      eps_threshold=config.epsilon_threshold_accuracy_linf)
-
     success_rate = float(torch.sum(is_adversarial)) / len(is_adversarial)
 
-    return display_adv_images, display_adv_perturbations, l2_robustness, l2_accuracy, linf_robustness, linf_accuracy, \
-           success_rate
+    return display_imgs, l2_robustness, l2_accuracy, linf_robustness, linf_accuracy, success_rate
 
 
 def generate_new_dataset(config, model, data_loader, adversary):
@@ -162,3 +173,12 @@ def orthogonal_projection(original_imgs, perturbed_imgs):
     lambdas = torch.sum(perturbations.view((-1, n_feats)) * original_imgs.view(-1, n_feats), dim=1)
     new_imgs = torch.clamp(original_imgs - lambdas[:, None, None, None] * perturbations, 0, 1)
     return new_imgs
+
+
+def get_first_derivative(model, b, l):
+    l = l.to(u.dev())
+    model.eval()
+    b.requires_grad_(True)
+    loss = model(b.to(u.dev()))[range(len(l)), l]
+    gradients = torch.autograd.grad([loss.sum()], b, retain_graph=False, create_graph=False)[0]
+    return gradients

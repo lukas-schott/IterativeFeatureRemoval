@@ -17,7 +17,7 @@ def main():
     # data
     data_loaders = dl.get_data_loader(config)
     data_loaders_robustness = [('test', data_loaders['test'])]
-    if config.dataset_modification != 'shift_mnist':
+    if config.dataset_modification == 'shift_mnist':
         data_loaders_robustness.append(('clean', data_loaders['clean']))
 
     if config.mnist_c:
@@ -48,7 +48,7 @@ def main():
     best_l2 = 0
     for epoch in range(config.n_epochs):
         # redundancy
-        if config.train_greedily and epoch % 10 == 0:
+        if config.train_greedily and epoch % config.n_epochs_per_net == 0:
             print('updateing greedily')
             trainer, model, optimizer, config = u.update_for_greedy_training(trainer, model, optimizer, config, epoch,
                                                                              data_loaders, loss_fct)
@@ -84,25 +84,30 @@ def main():
 
             for dl_name, data_loader in data_loaders_robustness:
                 for m_name, eval_model in models:
+                    name = f'{dl_name}_{m_name}'
                     eval_model.eval()
                     adversaries = [att.get_attack(eval_model, 'l2', attack, config.attack_eval_iter,
                                                   l2_step_size=config.attack_eval_l2_step_size,
                                                   linf_step_size=config.attack_eval_linf_step_size,
                                                   max_eps_l2=config.attack_train_max_eps_l2,
                                                   max_eps_linf=1) for attack in config.attacks_eval_names]
-                    name = f'{dl_name}_{m_name}'
                     print('robustness eval mode', name)
-                    display_adv_images, display_adv_perturbations, l2_robustness, l2_accuracy, linf_robustness, \
-                        linf_accuracy, success_rate = att.evaluate_robustness(config, eval_model, data_loader, adversaries)
+                    display_imgs, l2_robustness, l2_accuracy, linf_robustness, linf_accuracy, success_rate = \
+                        att.evaluate_robustness(config, eval_model, data_loader, adversaries)
                     writer.add_scalar(f'{name}_attack_l2/l2_robustness', l2_robustness, global_step=epoch)
                     writer.add_scalar(f'{name}_attack_l2/linf_robustness', linf_robustness, global_step=epoch)
                     writer.add_scalar(f'{name}_attack_l2/l2_accuracy_eps={config.epsilon_threshold_accuracy_l2}',
                                       l2_accuracy, global_step=epoch)
                     writer.add_scalar(f'{name}_attack_l2/linf_accuracy_eps={config.epsilon_threshold_accuracy_linf}',
                                       linf_accuracy, global_step=epoch)
-                    writer.add_image(f'{name}_attack_l2/adversarials', display_adv_images, global_step=epoch)
-                    writer.add_image(f'{name}_attack_l2/perturbations_rescaled', display_adv_perturbations,
+                    writer.add_image(f'{name}_attack_l2/adversarials', display_imgs['adversarials'], global_step=epoch)
+                    writer.add_image(f'{name}_attack_l2/originals', display_imgs['originals'], global_step=epoch)
+                    writer.add_image(f'{name}_attack_l2/gradients', display_imgs['gradients'], global_step=epoch)
+                    writer.add_image(f'{name}_attack_l2/perturbations_rescaled', display_imgs['perturbations_rescaled'],
                                      global_step=epoch)
+
+                    accuracy_plane = evaluate.evaluate_net(config, eval_model, data_loader)
+                    writer.add_scalar(f'indivuduals_{dl_name}/{m_name}_accuracy', accuracy_plane, epoch)
 
                 # if name == 'test':
                 #     replace_best = False
@@ -121,9 +126,6 @@ def main():
         if epoch % 20 == 0 or epoch == config.n_epochs - 1:
             u.save_state(model, optimizer, config.experiment_folder, epoch)
             print('model saved')
-
-
-
     writer.close()
 
 

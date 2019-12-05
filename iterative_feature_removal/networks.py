@@ -10,11 +10,15 @@ def get_model(config):
     if config.dataset == 'MNIST':
         if config.model == 'CNN' or config.model == 'cnn':
             # model = VanillaCNN(n_groups=config.n_redundant)
-            model = RedundancyNetworks(config.n_redundant)
+            if config.all_in_one_model:
+                model = RedundancyNetworksJointBody(config.n_redundant)
+            else:
+                model = RedundancyNetworks(config.n_redundant, config.n_channels)
         elif config.model == 'MLP' or config.model == 'mlp':
             model = MLP()
         else:
             raise Exception(f'Model {config.model} is not defined')
+
     elif config.dataset == 'greyscale_CIFAR10':
         model = models.resnet18()
         model.conv1 = torch.nn.Conv2d(1, 64, kernel_size=(7, 7), stride=(2, 2), padding=(3, 3), bias=False)
@@ -53,11 +57,11 @@ class MLP(nn.Module):
 
 # model from https://github.com/jeromerony/fast_adversarial/blob/master/fast_adv/models/mnist/small_cnn.py
 class VanillaCNN(nn.Module):
-    def __init__(self, drop=0.5, n_groups=1):
+    def __init__(self, n_groups=1, n_classes=10, n_channels=1):
         super().__init__()
 
-        self.num_channels = 1
-        self.num_labels = 10
+        self.num_channels = n_channels
+        self.num_labels = n_classes
         self.cached_batches = False
 
         activ = nn.LeakyReLU(True)
@@ -83,7 +87,6 @@ class VanillaCNN(nn.Module):
         self.fc_5 = nn.Conv2d(64*n_groups, 200*n_groups, 4, groups=n_groups)
         self.relu_5 = activ
 
-        self.drop_5 = nn.Dropout(drop)
         self.fc_6 = nn.Conv2d(200*n_groups, 200*n_groups, 1, groups=n_groups)
         self.relu_5 = activ
 
@@ -126,10 +129,10 @@ class VanillaCNN(nn.Module):
 
 
 class RedundancyNetworks(nn.Module):
-    def __init__(self, n_redundant):
+    def __init__(self, n_redundant, n_channels=1):
         super().__init__()
         self.n_redundant = n_redundant
-        self.networks = [VanillaCNN() for _ in range(self.n_redundant)]
+        self.networks = [VanillaCNN(n_channels=n_channels) for _ in range(self.n_redundant)]
         for i, net_i in enumerate(self.networks):
             self.add_module(f'net_{i}', net_i)
         self.cached_batches = None
@@ -142,6 +145,31 @@ class RedundancyNetworks(nn.Module):
         # n_redundant can be tuned from outside
         outs = [module(self.cached_batches[:, i]) for i, module in enumerate(self.networks[:self.n_redundant])]
         outs = torch.stack(outs, dim=1)
+        probabilities = F.softmax(outs, dim=2).mean(dim=1)    # add probabilities of individual networks
+        if return_individuals:
+            return probabilities, outs
+        else:
+            if self.training:
+                return outs.mean(dim=1)     # logits for cross entropy
+            else:
+                return probabilities        # add in probability space to avoid winning of single over-confident network
+
+
+class RedundancyNetworksJointBody(nn.Module):
+    def __init__(self, n_redundant, n_classes=10):
+        super().__init__()
+        self.n_redundant = n_redundant
+        self.n_classes = n_classes
+        self.cached_batches = None
+        self.net = VanillaCNN(n_classes=10*n_redundant)
+
+    def forward(self, input, return_individuals=False):
+        shape = input.shape
+        # convention: b, n_redundant, n_channel, x, y
+        self.cached_batch = input
+        self.cached_batch.requires_grad_(True)
+        # n_redundant can be tuned from outside
+        outs = self.net(self.cached_batch).view(shape[0], self.n_redundant, self.n_classes)
         probabilities = F.softmax(outs, dim=2).mean(dim=1)    # add probabilities of individual networks
         if return_individuals:
             return probabilities, outs

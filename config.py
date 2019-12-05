@@ -19,6 +19,8 @@ class DefaultArguments:
     dataset_modification = 'None'   # single_feat, double_feat, shift_mnist
     dataset = 'MNIST'
     mnist_c = False
+    add_gaussian_noise_during_training = 0.
+
 
     # training
     model = 'cnn'
@@ -34,6 +36,11 @@ class DefaultArguments:
     train_greedily = False
     all_logits = False
     cosine_dissimilarity_weight = 0.1
+    cosine_only_for_top_k = 0
+    all_in_one_model = False
+    gradient_regularization_weight = 0.
+    scalar_prod_as_similarity = False
+    n_epochs_per_net = 10
 
     # percentage_to_append = 0.2           #
     accuracy_eval_interval = 1
@@ -124,6 +131,11 @@ def parse_arguments(passed_args=None):
     args.proj_dir = proj_dir
     if args.training_mode != 'redundancy':
         args.n_redundant = 1
+    if args.dataset == 'MNIST':
+        args.n_channels = 1
+        if args.dataset_modification == 'texture_mnist':
+            args.n_channels = 3
+
     print('args', args)
     print('exp name', args.exp_name)
     return args

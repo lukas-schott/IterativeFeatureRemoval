@@ -7,6 +7,19 @@ from iterative_feature_removal import attacks as att
 import torchvision.transforms as transforms
 
 
+class FloatTensorDataset(data.Dataset):
+    def __init__(self, data, targets, **kwargs):
+        super().__init__(**kwargs)
+        self.data = data
+        self.targets = targets
+
+    def __getitem__(self, index):
+        return self.data[index], self.targets[index]
+
+    def __len__(self):
+        return self.data.size(0)
+
+
 def get_data_loader(config):
     if config.dataset == 'MNIST':
         transforms_train = [transforms.ToTensor()]
@@ -16,6 +29,7 @@ def get_data_loader(config):
             transforms_train.append(transforms.Lambda(lambda x:
                                                       (x + torch.empty_like(x).normal_(0, scale)).clamp_(0, 1)))
         transforms_train = transforms.Compose(transforms_train)
+        transforms_test = transforms.Compose(transforms_test)
 
         dataset_train = datasets.MNIST(config.proj_dir + '/data/', download=True, transform=transforms_train)
         dataset_test = datasets.MNIST(config.proj_dir + '/data/', train=False, transform=transforms_test)
@@ -93,11 +107,20 @@ def get_mnist_c(config):
     return data_loaders
 
 
-def create_pixel_indicator(*datasets, config=None):
+def create_pixel_indicator(dataset_train, dataset_test, config=None):
     print(f'using dataset: ', config.dataset_modification)
-    for dataset in datasets:
+
+    if config.dataset_modification == 'texture_mnist':
+        test_data = torch.tensor(np.load('./data/mnist_texture/x_test_rand_textured_2.npy').transpose(0, 3, 1, 2), dtype=torch.float32)
+        train_data = torch.tensor(np.load('./data/mnist_texture/x_train_textured_2.npy').transpose(0, 3, 1, 2), dtype=torch.float32)
+        new_test_dataset = FloatTensorDataset(test_data[:, :, 2:-2, 2:-2], dataset_test.targets)
+        new_train_dataset = FloatTensorDataset(train_data[:, :, 2:-2, 2:-2], dataset_train.targets)
+        return new_train_dataset, new_test_dataset
+
+    for dataset in [dataset_train, dataset_test]:
         all_coords = np.array([[4, 4], [13, 4], [23, 4], [4, 13], [13, 13], [23, 13], [4, 23], [13, 23],
                            [23, 23], [20, 20]])
+
         # all_coords = np.array([[12, 9], [14, 10], [12, 11], [14, 12], [12, 13], [14, 14], [12, 15], [14, 16],
         #                    [12, 17], [14, 18]])
         for i, coords in zip(range(10), all_coords):
@@ -108,7 +131,6 @@ def create_pixel_indicator(*datasets, config=None):
                 dataset_copy[:, 0, coords[0], coords[1]] = 255
             elif config.dataset_modification == 'shift_mnist':
                 print('shift mnists', i)
-                print('dataset copy', dataset_copy.shape, torch.max(dataset_copy))
                 dataset_copy[..., i*2+4, 4] = 255
             elif config.dataset_modification == 'double_feat':
                 dataset_copy[:] = 0
@@ -118,7 +140,7 @@ def create_pixel_indicator(*datasets, config=None):
             else:
                 raise Exception(f'dataset {config.dataset_modification} not selectable')
             dataset.data[dataset.targets == i] = dataset_copy
-    return datasets
+    return dataset_train, dataset_test
 
 
 def create_new_dataset(config, perturbed_imgs, original_imgs, original_labels,
@@ -154,8 +176,8 @@ def append_dataset(config, data_loader, appended_data_loader):
 
 def copy_data_loader(data_loader):
     dset_new = data_loader.dataset
-    dset_new.data =  data_loader.dataset.data.clone()
-    dset_new.targets =  data_loader.dataset.targets.clone()
+    dset_new.data = data_loader.dataset.data.clone()
+    dset_new.targets = data_loader.dataset.targets.clone()
     new_data_loader = data.DataLoader(dset_new, batch_size=data_loader.batch_size, shuffle=False)
     return new_data_loader
 
