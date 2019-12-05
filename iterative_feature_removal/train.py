@@ -293,12 +293,7 @@ def calc_abs_cosine_similarity(tensor, epsilon=1e-10, scalar_prod_as_similarity=
     if scalar_prod_as_similarity:
         return scalar_prod
     a_norm = torch.sqrt(torch.sum(tensor**2, dim=2))   # shape: (bs, n_vecs)
-
-    # b_norm = (tensor[:, :, None, :].detach()**2 * tensor[:, None, :, :]**2).sum(dim=3).sqrt()     # (bs, n_vecs, n_vecs)
-    b_norm = a_norm[:, None, :]  # standard
-
-    # tmp = a_norm[:, None, :]
-    norms = a_norm[:, :, None].detach() * b_norm     # (bs, n_vecs, n_vecs)
+    norms = a_norm[:, :, None].detach() * a_norm[:, None, :]     # (bs, n_vecs, n_vecs)
 
     assert norms.shape == scalar_prod.shape
     return torch.abs(scalar_prod / (norms + epsilon))
