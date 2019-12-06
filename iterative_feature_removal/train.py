@@ -246,7 +246,9 @@ class RedundancyTrainer(Trainer):
             sensitivity_vectors = tmp
 
         abs_cosine_similarity = calc_abs_cosine_similarity(
-            sensitivity_vectors.abs(), scalar_prod_as_similarity=self.config.scalar_prod_as_similarity)
+            sensitivity_vectors.abs(),
+            scalar_prod_as_similarity=self.config.scalar_prod_as_similarity,
+            projection_exponent=self.config.projection_exponent)
         mask = torch.triu(torch.ones(bs, n_redundant, n_redundant),
                           diagonal=1).type(torch.bool)
         assert mask.shape == abs_cosine_similarity.shape
@@ -277,7 +279,7 @@ class RedundancyTrainer(Trainer):
         super().write_stats(writer, epoch)
 
 
-def calc_abs_cosine_similarity(tensor, epsilon=1e-10, scalar_prod_as_similarity=False):
+def calc_abs_cosine_similarity(tensor, epsilon=1e-10, scalar_prod_as_similarity=False, projection_exponent=1.):
     """
     :param tensor: must be shape (bs, n_vectors, n_dims)
     :param epsilon: avoid division by zero
@@ -289,9 +291,9 @@ def calc_abs_cosine_similarity(tensor, epsilon=1e-10, scalar_prod_as_similarity=
     # = mat prod of column_vec * row_vec
     # detach to only make net_i orthogonal to net_<i and not the other way around (greedy)
 
-    scalar_prod = torch.sum(tensor[:, :, None, :].detach() * tensor[:, None, :, :], dim=3)  # (bs, n_vecs, n_vecs)
+    scalar_prod = torch.sum(tensor[:, :, None, :].detach()**projection_exponent * tensor[:, None, :, :], dim=3)
     if scalar_prod_as_similarity:
-        return scalar_prod
+        return scalar_prod    # (bs, n_vecs, n_vecs)
     a_norm = torch.sqrt(torch.sum(tensor**2, dim=2))   # shape: (bs, n_vecs)
     norms = a_norm[:, :, None].detach() * a_norm[:, None, :]     # (bs, n_vecs, n_vecs)
 

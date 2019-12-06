@@ -36,6 +36,7 @@ class DefaultArguments:
     train_greedily = False
     all_logits = False
     cosine_dissimilarity_weight = 0.1
+    projection_exponent = 1.
     cosine_only_for_top_k = 0
     all_in_one_model = False
     gradient_regularization_weight = 0.

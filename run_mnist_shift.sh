@@ -150,11 +150,17 @@ python3 main.py --cosine_dissimilarity_weight 0.05 --training_mode redundancy --
 python3 main.py --cosine_dissimilarity_weight 0.05 --training_mode redundancy --lr 0.0005 --weight_decay 1e-4 --n_redundant 10 --exp_series shift_mnist --optimizer adam --name ScalarProdJointGenerousCW005 --dataset_modification shift_mnist --scalar_prod_as_similarity True
 
 # GNScalarProdGreedyCW005
-python3 main.py --cosine_dissimilarity_weight 0.05 --training_mode redundancy --lr 0.0005 --weight_decay 1e-4 --n_redundant 10 --exp_series shift_mnist --optimizer adam --name ScalarProdGreedyCW005 --dataset_modification shift_mnist --train_greedily True --scalar_prod_as_similarity True --add_gaussian_noise_during_training 0.02
+python3 main.py --cosine_dissimilarity_weight 0.05 --training_mode redundancy --lr 0.0005 --weight_decay 1e-4 --n_redundant 10 --exp_series shift_mnist --optimizer adam --name GNScalarProdGreedyCW005 --dataset_modification shift_mnist --train_greedily True --scalar_prod_as_similarity True --add_gaussian_noise_during_training 0.02
 
 # sys1_0, ScalarProdJointCW0005
 python3 main.py --cosine_dissimilarity_weight 0.005 --training_mode redundancy --lr 0.0005 --weight_decay 1e-4 --n_redundant 10 --exp_series shift_mnist --optimizer adam --name ScalarProdJointCW0005 --dataset_modification shift_mnist --scalar_prod_as_similarity True
 
+# fbgpu1_5, ScalarProdGreedyCW0005
+python3 main.py --cosine_dissimilarity_weight 0.005 --training_mode redundancy --lr 0.0005 --weight_decay 1e-4 --n_redundant 10 --exp_series shift_mnist --optimizer adam --name ScalarProdGreedyCW0005 --dataset_modification shift_mnist --train_greedily True --scalar_prod_as_similarity True
+
+
+# fbgpu1_0, Exponent2ScalarProdGreedyCW005
+python3 main.py --cosine_dissimilarity_weight 0.05 --training_mode redundancy --lr 0.0005 --weight_decay 1e-4 --n_redundant 10 --exp_series shift_mnist --optimizer adam --name Exponent2ScalarProdGreedyCW005 --dataset_modification shift_mnist --train_greedily True --scalar_prod_as_similarity True --projection_exponent 2.
 
 
 python3 main.py --cosine_dissimilarity_weight 50. --training_mode redundancy --lr 0.0005 --weight_decay 1e-4 --n_redundant 10 --exp_series shift_mnist --optimizer adam --name trash --dataset_modification shift_mnist --train_greedily True --all_logits True --n_epochs_per_net 2
