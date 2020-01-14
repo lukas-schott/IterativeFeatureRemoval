@@ -1,6 +1,7 @@
 import torch
 from torch.nn import functional as F
 from iterative_feature_removal.train import get_trainer, get_optimizer
+from matplotlib import pyplot as plt
 
 
 def dev():
@@ -63,8 +64,8 @@ def label_2_onehot(l: torch.Tensor, n_classes: int = 10):
 
 
 def save_state(model: torch.nn.Module, optimizer: torch.optim.Optimizer, save_path: str, epoch: int,
-               replace_best: bool = False):
-    torch.save({'model': model.state_dict(), 'optimizer': optimizer, 'epoch': epoch},
+               replace_best: bool = False, config=None):
+    torch.save({'model': model.state_dict(), 'optimizer': optimizer, 'epoch': epoch, 'config': config},
                save_path + f'/save_model_{epoch}.pt')
     if replace_best:
         torch.save({'model': model.state_dict(), 'optimizer': optimizer, 'epoch': epoch},
@@ -89,3 +90,32 @@ def update_for_greedy_training(trainer, model, optimizer, config, epoch, data_lo
         trainer = Trainer(model, data_loaders['train'], optimizer, config, loss_fct)
 
     return trainer, model, optimizer, config
+
+
+def get_best_non_target_logit(logits, l):
+    top_2 = torch.topk(logits, 2).indices
+    is_true_logit_best_mask = top_2[:, 0] == l
+    best_other_indices = top_2[:, 0]
+    best_other_indices[is_true_logit_best_mask] = top_2[:, 1][is_true_logit_best_mask]
+    best_other_logits = logits[range(len(l)), best_other_indices]
+    return best_other_logits, best_other_indices
+
+
+def plot_similarity_matrix(similarity, vmin=0, vmax=1, names=None, xlabel='', ylabel=''):
+    n = similarity.shape[0]
+    fig, ax = plt.subplots(figsize=(n, n))
+
+    ax.matshow(similarity, cmap='Greens', vmin=vmin, vmax=vmax)
+    for i in range(n):
+        for j in range(n):
+            c = similarity[j, i]
+            ax.text(i, j, f'{c:0.5f}', va='center', ha='center')
+    if names is not None:
+        ax.set_xticklabels([''] + names)
+        ax.set_yticklabels([''] + names)
+        ax.xaxis.set_label_position('top')
+        ax.set_xlabel(xlabel)
+        ax.set_ylabel(ylabel)
+    else:
+        ax.axis('off')
+    return fig

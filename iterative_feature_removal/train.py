@@ -4,6 +4,7 @@ from iterative_feature_removal import utils as u
 from iterative_feature_removal.attacks import get_attack, orthogonal_projection
 from torch import optim
 from iterative_feature_removal.networks import requires_grad_
+import matplotlib.pyplot as plt
 
 
 def get_trainer(config):
@@ -191,52 +192,49 @@ class ActivationMatchingAdversarialOrthogonalProjectionTrainer(ActivationMatchin
 
 
 class RedundancyTrainer(Trainer):
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.mask = None
+
     def forward(self, b):
         return self.model(b, return_individuals=True)
 
     def reset_counters(self):
         super().reset_counters()
         self.epoch_stats['abs_cosine_similarity'] = []
+        self.epoch_stats['abs_scalar_product_similarity'] = []
+        self.epoch_stats['similarity_measure'] = []
+        self.epoch_stats[f'train_{self.config.similarity_measure}_exp_{self.config.projection_exponent}'] = []
         self.epoch_stats['gradient_magnitude'] = []
 
-    def get_logits(self, individual_logits, n_redundant, bs, l_ind):
-        # enforce orthogonality of Jacobean with low cosine similarity
-        x_inds = range(individual_logits.shape[0] * n_redundant)   # batch and individual nets in one dim
-        if self.config.all_logits:
-            correct_logits = torch.zeros((n_redundant * bs, self.config.n_classes),
-                                         dtype=torch.float32).to(u.dev())
-            correct_logits[x_inds, l_ind] = 2 * individual_logits.reshape(-1, self.config.n_classes)[x_inds, l_ind]
-            correct_logits -= individual_logits.reshape(-1, self.config.n_classes)  # correct logit - wrong logits
-        else:
-            correct_logits = individual_logits.reshape(-1, self.config.n_classes)[x_inds, l_ind]
-        return correct_logits
-
-    def get_grads_wrt_input(self, grad_loss, bs, n_redundant):
-        if not self.config.all_in_one_model:
-            assert self.model.cached_batches.shape[:2] == (bs, n_redundant)
-        grads_wrt_input = torch.autograd.grad([grad_loss], self.model.cached_batches, create_graph=True,
-                                              retain_graph=True)[0].abs()
-        return grads_wrt_input
-
     def loss(self, outputs, l):
+        bs, n_classes = l.shape[0], self.config.n_classes
+        n_redundant = self.model.n_redundant
+
         _, individual_logits = outputs
         assert not torch.isnan(individual_logits).any().bool().item()
-        bs = l.shape[0]
-        n_redundant = self.model.n_redundant
+        assert individual_logits.shape == (l.shape[0], n_redundant, n_classes)  # shape convention
+
+        if self.mask is not None:
+            def modify_grads(x, inds):
+                x[:, inds] = 0
+                return x
+            individual_logits.register_hook(lambda x: modify_grads(x, self.mask))
+
         l_ind = l[:, None].expand((bs, n_redundant)).flatten()    # same as n_redundant
         ce_ind = F.cross_entropy(individual_logits.view(-1, self.config.n_classes), l_ind)  # all in b dim
         loss = ce_ind
 
-        selected_logits = self.get_logits(individual_logits, n_redundant, bs, l_ind)
-        grad_loss = torch.sum(selected_logits)
-        # get abs cosine similarity
-        grads_wrt_input = self.get_grads_wrt_input(grad_loss, bs, n_redundant)
-        sensitivity_vectors = grads_wrt_input.view(bs, n_redundant, -1)
+        # get gradients
+        selected_logits = select_logits(individual_logits.view(bs*n_redundant, n_classes), l_ind,
+                                        self.config.logits_for_similarity, n_classes).view(bs, n_redundant)
+        sensitivity_vectors = get_grads_wrt_input(self.model, selected_logits, self.config.all_in_one_model,
+                                                  create_graph=True).view(bs, n_redundant, -1).abs()
 
         if self.config.cosine_only_for_top_k != 0:
             # only calculate the cosine similarity for the top k values and ingore the others
             k = self.config.cosine_only_for_top_k
-            b_inds = torch.arange(bs).view(bs, 1).repeat(1, k* n_redundant).flatten()  # equivalent to tile
+            b_inds = torch.arange(bs).view(bs, 1).repeat(1, k * n_redundant).flatten()  # equivalent to tile
             n_redundant_inds = torch.arange(n_redundant).view(n_redundant, 1).repeat(1, k).flatten().repeat(bs)
             best_k = torch.topk(sensitivity_vectors, k, dim=-1).indices.flatten()
             assert len(b_inds) == len(n_redundant_inds) == len(best_k)
@@ -245,25 +243,33 @@ class RedundancyTrainer(Trainer):
             tmp[b_inds, n_redundant_inds, best_k] = sensitivity_vectors[[b_inds, n_redundant_inds, best_k]]
             sensitivity_vectors = tmp
 
-        abs_cosine_similarity = calc_abs_cosine_similarity(
-            sensitivity_vectors.abs(),
-            scalar_prod_as_similarity=self.config.scalar_prod_as_similarity,
-            projection_exponent=self.config.projection_exponent)
-        mask = torch.triu(torch.ones(bs, n_redundant, n_redundant),
-                          diagonal=1).type(torch.bool)
-        assert mask.shape == abs_cosine_similarity.shape
-        abs_cosine_similarity = abs_cosine_similarity[mask]  # get off diagonal elements
-        abs_cosine_similarity = abs_cosine_similarity.mean()
+        # enforce orthogonality of grads
+        similarity_measure = calc_similarity_estimator(sensitivity_vectors,
+                                                       similarity_measure=self.config.similarity_measure,
+                                                       projection_exponent=self.config.projection_exponent)
+        mask = torch.triu(torch.ones(bs, n_redundant, n_redundant), diagonal=1).type(torch.bool)
+        assert mask.shape == similarity_measure.shape
+        similarity_measure_mean = similarity_measure[mask].mean()  # get upper off diagonal elements
 
-        loss += self.config.cosine_dissimilarity_weight * abs_cosine_similarity
-
+        loss += self.config.dissimilarity_weight * similarity_measure_mean
         if self.config.gradient_regularization_weight != 0:
             loss += self.config.gradient_regularization_weight * (sensitivity_vectors**2).mean(dim=0).sum()
 
-
-        self.epoch_stats['gradient_magnitude'].append(grads_wrt_input.abs().sum())
+        # for plotting
+        selected_logits = select_logits(individual_logits.view(bs*n_redundant, n_classes), l_ind,
+                                        'target', n_classes).view(bs, n_redundant)
+        sensitivity_vectors = get_grads_wrt_input(self.model, selected_logits, self.config.all_in_one_model,
+                                                  create_graph=False).detach().view(bs, n_redundant, -1)
+        abs_cosine_similarity_plot = calc_similarity_estimator(sensitivity_vectors.abs().detach()).cpu()
+        abs_scalar_product_similarity_plot = calc_similarity_estimator(sensitivity_vectors.abs().detach(),
+                                                                       similarity_measure='scalar_prod_abs').cpu()
+        self.epoch_stats['gradient_magnitude'].append(sensitivity_vectors.detach().abs().sum())
         self.epoch_stats['cross_entropy'].append(ce_ind.detach())
-        self.epoch_stats['abs_cosine_similarity'].append(abs_cosine_similarity.detach())
+        self.epoch_stats['similarity_measure'].append(similarity_measure.detach())
+        self.epoch_stats['abs_cosine_similarity'].append(abs_cosine_similarity_plot)
+        self.epoch_stats['abs_scalar_product_similarity'].append(abs_scalar_product_similarity_plot)
+        self.epoch_stats[f'train_{self.config.similarity_measure}_exp_{self.config.projection_exponent}'].append(
+            similarity_measure.detach().cpu())
         return loss
 
     def track_statistics(self, b, l, outputs):
@@ -271,19 +277,33 @@ class RedundancyTrainer(Trainer):
         super().track_statistics(b, l, logits)
 
     def write_stats(self, writer, epoch):
-        abs_cosine_similarities = torch.mean(torch.stack(self.epoch_stats['abs_cosine_similarity']))
-        print('cosine sim',  torch.mean(torch.stack(self.epoch_stats['abs_cosine_similarity'])))
-        writer.add_scalar('train/abs_cosine_similarity', abs_cosine_similarities, epoch)
         gradient_magnitude = torch.mean(torch.stack(self.epoch_stats['gradient_magnitude']))
         writer.add_scalar('train/gradient_magnitude', gradient_magnitude, epoch)
         super().write_stats(writer, epoch)
 
+        # plot cosine sim
+        n_redundant = self.model.n_redundant
+        for name in ['abs_scalar_product_similarity', 'abs_cosine_similarity',
+                     f'train_{self.config.similarity_measure}_exp_{self.config.projection_exponent}']:
 
-def calc_abs_cosine_similarity(tensor, epsilon=1e-10, scalar_prod_as_similarity=False, projection_exponent=1.):
+            similarity = torch.cat(self.epoch_stats[name], dim=0).mean(dim=0)
+            mask = torch.triu(torch.ones(n_redundant, n_redundant), diagonal=1).type(torch.bool)
+            mean_sim = similarity[mask].mean()
+            writer.add_scalar(f'train/{name}', mean_sim, epoch)
+
+            # plot as matrix
+            fig = u.plot_similarity_matrix(similarity, vmin=0, vmax=torch.max(similarity))
+            writer.add_figure(f'train_sim_matrix/{name}', fig, epoch)
+
+
+def calc_similarity_estimator(tensor, epsilon=1e-10, similarity_measure='cosine_similarity_abs',
+                              projection_exponent=1.):
     """
     :param tensor: must be shape (bs, n_vectors, n_dims)
     :param epsilon: avoid division by zero
-    :return: abs of cosine similarity
+    :param similarity_measure: cosine_similarity_abs or scalar_prod_abs
+    :param projection_exponent:
+    :return: abs of similarity measure
 
     calculates a*b / (||a|| ||b||)
     """
@@ -292,13 +312,55 @@ def calc_abs_cosine_similarity(tensor, epsilon=1e-10, scalar_prod_as_similarity=
     # detach to only make net_i orthogonal to net_<i and not the other way around (greedy)
 
     scalar_prod = torch.sum(tensor[:, :, None, :].detach()**projection_exponent * tensor[:, None, :, :], dim=3)
-    if scalar_prod_as_similarity:
+    if similarity_measure == 'scalar_prod_abs':
         return scalar_prod    # (bs, n_vecs, n_vecs)
-    a_norm = torch.sqrt(torch.sum(tensor**2, dim=2))   # shape: (bs, n_vecs)
-    norms = a_norm[:, :, None].detach() * a_norm[:, None, :]     # (bs, n_vecs, n_vecs)
+    elif similarity_measure == 'cosine_similarity_abs':
+        a_norm = torch.sqrt(torch.sum(tensor**2, dim=2))   # shape: (bs, n_vecs)
+        norms = a_norm[:, :, None].detach() * a_norm[:, None, :]     # (bs, n_vecs, n_vecs)
+        assert norms.shape == scalar_prod.shape
+        return torch.abs(scalar_prod / (norms + epsilon))
+    else:
+        print('similarity measure', similarity_measure)
+        raise NotImplementedError()
 
-    assert norms.shape == scalar_prod.shape
-    return torch.abs(scalar_prod / (norms + epsilon))
+
+def get_grads_wrt_input(model, selected_logits, all_in_one_model, create_graph=True):
+    n_redundant = model.n_redundant
+    if all_in_one_model:
+        selected_logits = selected_logits.sum(dim=0)   # (bs, n_redundant) --> (n_redundant)
+        grads_wrt_input = []
+        for grad_loss_i in selected_logits:
+            wrt = [model.cached_batch, *[model.layers[i] for i in [3, 4]]]
+            # wrt = [self.model.cached_batch]
+            grads = torch.autograd.grad(grad_loss_i, wrt, create_graph=create_graph, retain_graph=True)[:len(wrt)]
+            grad = torch.cat([grad_i.flatten(1) for grad_i in grads], dim=1)
+            grads_wrt_input.append(grad)
+
+        grads_wrt_input = torch.stack(grads_wrt_input, dim=1)   # convention (bs, n_redundant, n_ch, n_x, n_y)
+    else:
+        assert model.cached_batches.shape[:2] == (selected_logits.shape[0], n_redundant)
+        grads_wrt_input = torch.autograd.grad([selected_logits.sum()], model.cached_batches, create_graph=create_graph,
+                                              retain_graph=True)[0].abs()   # (bs, n_redundant, n_ch, n_x, n_y)
+    return grads_wrt_input
 
 
-
+def select_logits(logits, l, logits_for_similarity, n_classes):
+    # enforce orthogonality of Jacobean with low cosine similarity
+    assert l.shape[0] == logits.shape[0]
+    bs = l.shape[0]
+    x_inds = range(logits.shape[0])   # batch and individual nets in one dim
+    if logits_for_similarity == 'target':
+        selected_logits = logits[x_inds, l]
+    elif logits_for_similarity == 'target_vs_best_other':
+        best_other_logits, _ = u.get_best_non_target_logit(logits, l)
+        selected_logits = logits[x_inds, l] - best_other_logits
+    elif logits_for_similarity == 'target_vs_all_other':
+        selected_logits = torch.zeros((bs, n_classes),
+                                      dtype=torch.float32).to(u.dev())
+        selected_logits[x_inds, l] = 2 * logits[x_inds, l]
+        selected_logits -= logits  # equivalent to correct logit - wrong logits
+        selected_logits = selected_logits.sum(dim=1)
+    else:
+        raise NotImplementedError(f'option for logits_for_similarity {logits_for_similarity} not implemented')
+    assert selected_logits.shape == (bs, )
+    return selected_logits

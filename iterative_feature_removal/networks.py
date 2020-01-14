@@ -11,9 +11,10 @@ def get_model(config):
         if config.model == 'CNN' or config.model == 'cnn':
             # model = VanillaCNN(n_groups=config.n_redundant)
             if config.all_in_one_model:
-                model = RedundancyNetworksJointBody(config.n_redundant)
+                model = RedundancyNetworksJointBody(config.n_redundant, config.n_channels,
+                                                    width_factor=config.width_factor)
             else:
-                model = RedundancyNetworks(config.n_redundant, config.n_channels)
+                model = RedundancyNetworks(config.n_redundant, config.n_channels, width_factor=config.width_factor)
         elif config.model == 'MLP' or config.model == 'mlp':
             model = MLP()
         else:
@@ -57,7 +58,7 @@ class MLP(nn.Module):
 
 # model from https://github.com/jeromerony/fast_adversarial/blob/master/fast_adv/models/mnist/small_cnn.py
 class VanillaCNN(nn.Module):
-    def __init__(self, n_groups=1, n_classes=10, n_channels=1):
+    def __init__(self, n_groups=1, n_classes=10, n_channels=1, width_factor=1):
         super().__init__()
 
         self.num_channels = n_channels
@@ -69,28 +70,28 @@ class VanillaCNN(nn.Module):
         # activ = nn.LeakyReLU(True)
 
         # feature extractor
-        self.conv_1 = nn.Conv2d(self.num_channels*n_groups, 32*n_groups, 3, groups=n_groups)
+        self.conv_1 = nn.Conv2d(self.num_channels*n_groups, 32*n_groups*width_factor, 3, groups=n_groups)
         self.relu_1 = activ
 
-        self.conv_2 = nn.Conv2d(32*n_groups, 32*n_groups, 3, groups=n_groups)
+        self.conv_2 = nn.Conv2d(32*n_groups*width_factor, 32*n_groups*width_factor, 3, groups=n_groups)
         self.relu_2 = activ
 
         self.pool_3 = nn.MaxPool2d(2, 2)
-        self.conv_3 = nn.Conv2d(32*n_groups, 64*n_groups, 3, groups=n_groups)
+        self.conv_3 = nn.Conv2d(32*n_groups*width_factor, 64*n_groups*width_factor, 3, groups=n_groups)
         self.relu_3 = activ
 
-        self.conv_4 = nn.Conv2d(64*n_groups, 64*n_groups, 3, groups=n_groups)
+        self.conv_4 = nn.Conv2d(64*n_groups*width_factor, 64*n_groups*width_factor, 3, groups=n_groups)
         self.relu_4 = activ
 
         # classifier
         self.pool_5 = nn.MaxPool2d(2, 2)
-        self.fc_5 = nn.Conv2d(64*n_groups, 200*n_groups, 4, groups=n_groups)
+        self.fc_5 = nn.Conv2d(64*n_groups*width_factor, 200*n_groups*width_factor, 4, groups=n_groups)
         self.relu_5 = activ
 
-        self.fc_6 = nn.Conv2d(200*n_groups, 200*n_groups, 1, groups=n_groups)
+        self.fc_6 = nn.Conv2d(200*n_groups*width_factor, 200*n_groups*width_factor, 1, groups=n_groups)
         self.relu_5 = activ
 
-        self.last = nn.Conv2d(200*n_groups, self.num_labels*n_groups, 1, groups=n_groups)
+        self.last = nn.Conv2d(200*n_groups*width_factor, self.num_labels*n_groups, 1, groups=n_groups)
         self.n_groups = n_groups
         for m in self.modules():
             if isinstance(m, nn.Conv2d):
@@ -106,7 +107,6 @@ class VanillaCNN(nn.Module):
             self.cached_batches = new_input.expand(input.shape[0], self.n_groups, input.shape[1], *input.shape[2:])
             self.cached_batches.requires_grad_(True)
             input = self.cached_batches.view(input.shape[0], self.n_groups * input.shape[1], *input.shape[2:])
-
         layer_1 = self.relu_1(self.conv_1(input))
         layer_2 = self.relu_2(self.conv_2(layer_1))
         layer_3 = self.relu_3(self.conv_3(self.pool_3(layer_2)))
@@ -124,15 +124,15 @@ class VanillaCNN(nn.Module):
         else:
             logits = individual_logits
         if return_activations:
-            return logits, (layer_1, layer_2, layer_3, layer_4, layer_5)
+            return logits, [layer_1, layer_2, layer_3, layer_4, layer_5]
         return logits
 
 
 class RedundancyNetworks(nn.Module):
-    def __init__(self, n_redundant, n_channels=1):
+    def __init__(self, n_redundant, n_channels=1, width_factor=1):
         super().__init__()
         self.n_redundant = n_redundant
-        self.networks = [VanillaCNN(n_channels=n_channels) for _ in range(self.n_redundant)]
+        self.networks = [VanillaCNN(n_channels=n_channels, width_factor=width_factor) for _ in range(self.n_redundant)]
         for i, net_i in enumerate(self.networks):
             self.add_module(f'net_{i}', net_i)
         self.cached_batches = None
@@ -156,20 +156,25 @@ class RedundancyNetworks(nn.Module):
 
 
 class RedundancyNetworksJointBody(nn.Module):
-    def __init__(self, n_redundant, n_classes=10):
+    def __init__(self, n_redundant, n_channels, n_classes=10, width_factor=1):
         super().__init__()
         self.n_redundant = n_redundant
         self.n_classes = n_classes
-        self.cached_batches = None
-        self.net = VanillaCNN(n_classes=10*n_redundant)
+        self.cached_batch = None
+        self.net = VanillaCNN(n_classes=10*n_redundant, n_channels=n_channels, width_factor=width_factor)
+        self.layers = None
 
     def forward(self, input, return_individuals=False):
         shape = input.shape
         # convention: b, n_redundant, n_channel, x, y
         self.cached_batch = input
+        # if self.training:
         self.cached_batch.requires_grad_(True)
         # n_redundant can be tuned from outside
-        outs = self.net(self.cached_batch).view(shape[0], self.n_redundant, self.n_classes)
+        outs, layers = self.net(self.cached_batch, return_activations=True)
+        outs = outs.view(shape[0], self.n_redundant, self.n_classes)
+        self.layers = layers
+
         probabilities = F.softmax(outs, dim=2).mean(dim=1)    # add probabilities of individual networks
         if return_individuals:
             return probabilities, outs
@@ -353,3 +358,14 @@ class WideResNet(nn.Module):
 def requires_grad_(model: nn.Module, requires_grad: bool) -> None:
     for param in model.parameters():
         param.requires_grad_(requires_grad)
+
+
+class Subnetwork(nn.Module):
+    def __init__(self, net, redundant_i=0):
+        super().__init__()
+        self.net = net
+        self.redundant_i = redundant_i
+
+    def forward(self, input):
+        out = self.net(input, return_individuals=True)[1]
+        return out[:, self.redundant_i]

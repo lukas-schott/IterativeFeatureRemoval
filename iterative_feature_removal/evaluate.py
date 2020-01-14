@@ -1,6 +1,8 @@
 import torch
 from iterative_feature_removal import utils as u
-from iterative_feature_removal.networks import requires_grad_
+from iterative_feature_removal import train as t
+from torch.utils import data
+from matplotlib import pyplot as plt
 
 
 def evaluate_net(config, model, data_loader_test):
@@ -46,11 +48,42 @@ def mnist_c_evaluation(model, data_loaders, config, writer=None, epoch=None):
     return results
 
 
-# def get_abs_cosine_similarity(config, model, data_loader_test):
-#     model = model.eval()
-#
-#     with torch.no_grad():
-#         n_correct, n_total = 0., 0.
-#         for i, (b, l) in enumerate(data_loader_test):
-#     grads_wrt_input = torch.autograd.grad([ce_ind], self.model.cached_batches, create_graph=True, retain_graph=True)[0]
-#     sensitivity_vectors = grads_wrt_input.view(l.shape[0], self.model.n_groups, -1)
+def get_similarity_measures(config, model, data_loader):
+    model = model.eval()
+    n_redundant, n_classes = model.n_redundant, config.n_classes
+    sorted_data_loader = data.DataLoader(data_loader.dataset, batch_size=config.attack_batch_size, shuffle=False)
+
+    for i, (b, l) in enumerate(sorted_data_loader):
+        b, l = b.to(u.dev()), l.to(u.dev())
+        break
+
+    bs = b.shape[0]
+    l_ind = l[:, None].expand((bs, n_redundant)).flatten()    # same as n_redundant
+
+    _, ind_logits = model(b, return_individuals=True)
+    assert model.cached_batches.shape[:2] == (bs, n_redundant)
+    selected_logits = t.select_logits(ind_logits.view(bs * n_redundant, n_classes), l_ind,
+                                      'target', n_classes).view(bs, n_redundant)
+    sensitivity_vectors = t.get_grads_wrt_input(
+        model, selected_logits, False, create_graph=False).view(bs, n_redundant, -1).detach().abs()
+    abs_cosine_similarity = t.calc_similarity_estimator(sensitivity_vectors).mean(dim=0)
+    abs_scalar_product_similarity = t.calc_similarity_estimator(sensitivity_vectors,
+                                                                similarity_measure='scalar_prod_abs').mean(dim=0)
+    return abs_cosine_similarity.cpu(), abs_scalar_product_similarity.cpu(), sensitivity_vectors.abs().mean()
+
+
+def plot_similarities(config, model, data_loader, writer, epoch):
+    abs_cosine_similarity, abs_scalar_product_similarity, grads = get_similarity_measures(config, model, data_loader)
+
+    writer.add_scalar('test/gradient_magnitude', grads, epoch)
+    n_redundant = model.n_redundant
+    mask = torch.triu(torch.ones(n_redundant, n_redundant), diagonal=1).type(torch.bool)
+    for name, similarity in zip(['abs_scalar_product_similarity', 'abs_cosine_similarity'],
+                                [abs_scalar_product_similarity, abs_cosine_similarity]):
+        mean_sim = similarity[mask].mean()
+        writer.add_scalar(f'test/{name}', mean_sim, epoch)
+        fig = u.plot_similarity_matrix(similarity)
+
+        writer.add_figure(f'test_sim_matrix/{name}', fig, epoch)
+
+
