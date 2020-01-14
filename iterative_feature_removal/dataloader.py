@@ -33,7 +33,7 @@ def get_data_loader(config):
 
         dataset_train = datasets.MNIST(config.proj_dir + '/data/', download=True, transform=transforms_train)
         dataset_test = datasets.MNIST(config.proj_dir + '/data/', train=False, transform=transforms_test)
-        dataset_test_clean = datasets.MNIST('./data/', train=False, transform=transforms_test)
+        dataset_test_clean = datasets.MNIST(config.proj_dir + '/data/', train=False, transform=transforms_test)
 
     elif config.dataset == 'CIFAR10' or config.dataset == 'greyscale_CIFAR10':
         # transforms
@@ -59,7 +59,11 @@ def get_data_loader(config):
     dataset_test_clean.targets = dataset_test_clean.targets[:end]
 
     if config.dataset_modification != 'None':
-        dataset_train, dataset_test = create_pixel_indicator(dataset_train, dataset_test, config=config)
+        dataset_train, dataset_test = modify_dataset(dataset_train, dataset_test, config=config)
+        if config.dataset_modification == 'texture_mnist':
+            dataset_test_clean = FloatTensorDataset(
+                dataset_test_clean.data[:, None, ...].repeat(1, 3, 1, 1).type(torch.float32)/255.,
+                dataset_test_clean.targets)
 
     data_loader_train = data.DataLoader(dataset_train, batch_size=config.batch_size, shuffle=True)
     data_loader_test = data.DataLoader(dataset_test, batch_size=config.batch_size, shuffle=False)
@@ -107,7 +111,7 @@ def get_mnist_c(config):
     return data_loaders
 
 
-def create_pixel_indicator(dataset_train, dataset_test, config=None):
+def modify_dataset(dataset_train, dataset_test, config=None):
     print(f'using dataset: ', config.dataset_modification)
 
     if config.dataset_modification == 'texture_mnist':

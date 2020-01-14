@@ -11,43 +11,47 @@ tz = timezone("Europe/Berlin")
 
 class DefaultArguments:
     exp_series = 'trash'
-    name = 'trash'
+    ename = 'trash'
     loss_fct = 'ce'                 # 'soft_ce', 'ce'
     real_exp = False
+    debug = False
+
 
     # data
     dataset_modification = 'None'   # single_feat, double_feat, shift_mnist
     dataset = 'MNIST'
-    mnist_c = False
+    mnist_c = True
     add_gaussian_noise_during_training = 0.
 
 
     # training
+
     model = 'cnn'
+    width_factor = 1
     training_mode = 'normal'       # normal, adversarial, adversarial_projection, redundancy
     activation_matching = False
     # old append_dataset, project_and_activation_matching, normal, project_out, adversarial_training (=DDN), 'siamese_adversarial_training'
-    n_redundant = 1
+    n_redundant = 5                # only for redundancy mode
     model_load_path = ''
 
     # reinit_network = True
 
     # redundancy networks
     train_greedily = False
-    all_logits = False
-    cosine_dissimilarity_weight = 0.1
+    logits_for_similarity = 'target'   # target, target_vs_best_other, target_vs_all_other
+    dissimilarity_weight = 0.1
     projection_exponent = 1.
     cosine_only_for_top_k = 0
     all_in_one_model = False
     gradient_regularization_weight = 0.
-    scalar_prod_as_similarity = False
+    similarity_measure = 'scalar_prod_abs'  # scalar_prod_abs, cosine_disimilarity_abs
     n_epochs_per_net = 10
 
     # percentage_to_append = 0.2           #
     accuracy_eval_interval = 1
     n_epochs = 100                   # DDN: 50
     batch_size = 128                # DDN: 128
-    weight_decay = 1e-6            # DDN: 1e-6
+    weight_decay = 0.            # DDN: 1e-6
     siamese_activations_weight = 1
     batch_size_test = 1000
 
@@ -60,17 +64,19 @@ class DefaultArguments:
 
     # attacks
     lp_metric = 'l2'
-    attack_batch_size = 1000
+    attack_batch_size = 500
 
     # attack eval
     robustness_eval_interval = 5
-    attacks_eval_names = ['DDN_L2']
+    attacks_eval_names = 'DDN_L2'   # e.g. 'DDN_L2, CW'...
     attack_eval_max_eps_l2 = 10
     attack_eval_iter = 100                     # DDN 300
     attack_eval_l2_step_size = 0.05
     attack_eval_linf_step_size = 0.01
     epsilon_threshold_accuracy_l2 = 1.5
     epsilon_threshold_accuracy_linf = 0.3
+    attack_shift = 2
+    attack_rot = 5
 
     # attack train
     epoch_start_adv_train = 0
@@ -79,7 +85,10 @@ class DefaultArguments:
     attack_train_iter = 100
     attack_train_l2_step_size = 0.05
     attack_percentage_clean = 0.
-    # adv training
+
+    # black box attack
+    black_box_attack_interval = 50
+    boundary_attack_iter = 1000   # 5000 to 10 000 for good results
 
     n_classes = 10
     end = 100000
@@ -123,12 +132,18 @@ def parse_arguments(passed_args=None):
         args.lr_step = args.n_epoch
 
     args.exp_name = get_run_name(c2d(DefaultArguments), args)
-    proj_dir = os.getcwd()
+    proj_dir = os.path.dirname(os.path.abspath(__file__))
+
     exp_folder = proj_dir + '/exp/' + args.exp_series + '/'
 
     args.experiment_folder = exp_folder + args.exp_name
 
     args = AttrDict(args)
+    if args.debug and args.end == -1:
+        args.end = 500
+        args.attack_eval_iter = 4
+        args.mnist_c = False
+
     args.proj_dir = proj_dir
     if args.training_mode != 'redundancy':
         args.n_redundant = 1
@@ -136,14 +151,15 @@ def parse_arguments(passed_args=None):
         args.n_channels = 1
         if args.dataset_modification == 'texture_mnist':
             args.n_channels = 3
-
-    print('args', args)
+    for name, val in args.items():
+        print(name, val)
     print('exp name', args.exp_name)
+    print()
     return args
 
 
 def get_run_name(default_args, args):
-    exp_name = args['name'] + '_'
+    exp_name = args['ename'] + '_'
     default_args.pop('exp_series')
     for key in default_args:
         if len(exp_name) > 100:
@@ -151,7 +167,7 @@ def get_run_name(default_args, args):
 
         old_val = default_args[key]
         if old_val != args[key] and key != 'device' \
-                and key != 'name' and key != 'expfolder':
+                and key != 'ename' and key != 'expfolder':
             val = args[key]
             if isinstance(val, float):
                 exp_name += f'{key}{val:.2f}-'
@@ -159,7 +175,6 @@ def get_run_name(default_args, args):
                 exp_name += f'{key}' + val[:5] + '-'
             else:
                 exp_name += f'{key}' + str(val) + '-'
-
 
     tz = timezone("Europe/Berlin")
     return exp_name + '--' + datetime.datetime.now(tz=tz).strftime(
