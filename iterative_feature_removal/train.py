@@ -229,7 +229,7 @@ class RedundancyTrainer(Trainer):
         selected_logits = select_logits(individual_logits.view(bs*n_redundant, n_classes), l_ind,
                                         self.config.logits_for_similarity, n_classes).view(bs, n_redundant)
         sensitivity_vectors = get_grads_wrt_input(self.model, selected_logits, self.config.all_in_one_model,
-                                                  create_graph=True).view(bs, n_redundant, -1).abs()
+                                                  create_graph=True).view(bs, n_redundant, -1)
 
         if self.config.cosine_only_for_top_k != 0:
             # only calculate the cosine similarity for the top k values and ingore the others
@@ -260,9 +260,9 @@ class RedundancyTrainer(Trainer):
                                         'target', n_classes).view(bs, n_redundant)
         sensitivity_vectors = get_grads_wrt_input(self.model, selected_logits, self.config.all_in_one_model,
                                                   create_graph=False).detach().view(bs, n_redundant, -1)
-        abs_cosine_similarity_plot = calc_similarity_estimator(sensitivity_vectors.abs().detach()).cpu()
-        abs_scalar_product_similarity_plot = calc_similarity_estimator(sensitivity_vectors.abs().detach(),
-                                                                       similarity_measure='scalar_prod_abs').cpu()
+        abs_cosine_similarity_plot = calc_similarity_estimator(sensitivity_vectors.detach()).cpu().abs()
+        abs_scalar_product_similarity_plot = calc_similarity_estimator(sensitivity_vectors.detach(),
+                                                                       similarity_measure='scalar_prod_abs').cpu().abs()
         self.epoch_stats['gradient_magnitude'].append(sensitivity_vectors.detach().abs().sum())
         self.epoch_stats['cross_entropy'].append(ce_ind.detach())
         self.epoch_stats['similarity_measure'].append(similarity_measure.detach())
@@ -313,12 +313,15 @@ def calc_similarity_estimator(tensor, epsilon=1e-10, similarity_measure='cosine_
 
     scalar_prod = torch.sum(tensor[:, :, None, :].detach()**projection_exponent * tensor[:, None, :, :], dim=3)
     if similarity_measure == 'scalar_prod_abs':
-        return scalar_prod    # (bs, n_vecs, n_vecs)
+        return scalar_prod.abs()    # (bs, n_vecs, n_vecs)
     elif similarity_measure == 'cosine_similarity_abs':
         a_norm = torch.sqrt(torch.sum(tensor**2, dim=2))   # shape: (bs, n_vecs)
         norms = a_norm[:, :, None].detach() * a_norm[:, None, :]     # (bs, n_vecs, n_vecs)
         assert norms.shape == scalar_prod.shape
         return torch.abs(scalar_prod / (norms + epsilon))
+    elif similarity_measure == 'random_vec':
+        scalar_prod = torch.sum(torch.randn_like(tensor)[:, :, None, :].detach().abs() * tensor[:, None, :, :], dim=3)
+        return scalar_prod.abs()
     else:
         print('similarity measure', similarity_measure)
         raise NotImplementedError()
@@ -340,7 +343,7 @@ def get_grads_wrt_input(model, selected_logits, all_in_one_model, create_graph=T
     else:
         assert model.cached_batches.shape[:2] == (selected_logits.shape[0], n_redundant)
         grads_wrt_input = torch.autograd.grad([selected_logits.sum()], model.cached_batches, create_graph=create_graph,
-                                              retain_graph=True)[0].abs()   # (bs, n_redundant, n_ch, n_x, n_y)
+                                              retain_graph=True)[0]   # (bs, n_redundant, n_ch, n_x, n_y)
     return grads_wrt_input
 
 

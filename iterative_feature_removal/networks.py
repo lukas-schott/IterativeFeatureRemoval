@@ -361,11 +361,18 @@ def requires_grad_(model: nn.Module, requires_grad: bool) -> None:
 
 
 class Subnetwork(nn.Module):
-    def __init__(self, net, redundant_i=0):
+    def __init__(self, model, redundant_i=0, all_in_one_model=False):
         super().__init__()
-        self.net = net
         self.redundant_i = redundant_i
+        self.all_in_one_model = all_in_one_model
+        if self.all_in_one_model:
+            self.net = model.networks[self.redundant_i]
+        else:
+            self.net = model
 
     def forward(self, input):
-        out = self.net(input, return_individuals=True)[1]
-        return out[:, self.redundant_i]
+        if self.all_in_one_model:
+            out = self.net(input, return_individuals=True)[1]   # logits
+            return out[:, self.redundant_i]
+        else:
+            return self.net(input)

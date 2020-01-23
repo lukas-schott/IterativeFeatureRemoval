@@ -31,7 +31,7 @@ class DefaultArguments:
     training_mode = 'normal'       # normal, adversarial, adversarial_projection, redundancy
     activation_matching = False
     # old append_dataset, project_and_activation_matching, normal, project_out, adversarial_training (=DDN), 'siamese_adversarial_training'
-    n_redundant = 5                # only for redundancy mode
+    n_redundant = 7                # only for redundancy mode
     model_load_path = ''
 
     # reinit_network = True
@@ -44,7 +44,7 @@ class DefaultArguments:
     cosine_only_for_top_k = 0
     all_in_one_model = False
     gradient_regularization_weight = 0.
-    similarity_measure = 'scalar_prod_abs'  # scalar_prod_abs, cosine_disimilarity_abs
+    similarity_measure = 'scalar_prod_abs'  # scalar_prod_abs, cosine_disimilarity_abs, random_vec
     n_epochs_per_net = 10
 
     # percentage_to_append = 0.2           #
@@ -56,8 +56,8 @@ class DefaultArguments:
     batch_size_test = 1000
 
     # optimizer
-    optimizer = 'sgd'      # DDN: sgd
-    lr = 0.01               # DDN: 0.01
+    optimizer = 'adam'      # DDN: sgd
+    lr = 0.0005               # DDN: 0.01
     momentum = 0.9          # DDN: 0.9
     lr_step = 30             # DNN: 30
     lr_decay = 0.1
@@ -86,9 +86,17 @@ class DefaultArguments:
     attack_train_l2_step_size = 0.05
     attack_percentage_clean = 0.
 
-    # black box attack
-    black_box_attack_interval = 50
-    boundary_attack_iter = 1000   # 5000 to 10 000 for good results
+    # boundary attack
+    black_box_attack_interval = 20
+    boundary_attack_steps = 5000   # 5000 to 10 000 for good results
+    boundary_attack_attack_spherical_step = 0.03   # 100
+    boundary_attack_source_step = 0.03   #
+
+    # brendel bethge attack
+    brendel_bethge_attack_lr = 1
+    brendel_bethge_attack_steps = 200   # 100
+    boundary_attack_attack_spherical_step = 0.03   # 0.01
+    boundary_attack_source_step = 0.03   # 0.01
 
     n_classes = 10
     end = 100000
@@ -139,10 +147,11 @@ def parse_arguments(passed_args=None):
     args.experiment_folder = exp_folder + args.exp_name
 
     args = AttrDict(args)
-    if args.debug and args.end == -1:
+    if args.debug and args.end == 100000:
         args.end = 500
         args.attack_eval_iter = 4
         args.mnist_c = False
+        args.n_epochs_per_net = 2
 
     args.proj_dir = proj_dir
     if args.training_mode != 'redundancy':

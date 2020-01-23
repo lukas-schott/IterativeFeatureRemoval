@@ -1,11 +1,15 @@
-from torch.utils import data
-import torch
-from torchvision import utils as tu
-from iterative_feature_removal import dataloader as dl, utils as u
-from advertorch import attacks as pyatt
-import numpy as np
+import time
+
 import foolbox
+import foolbox.ext.native as fbn
+import numpy as np
+import torch
+from advertorch import attacks as pyatt
 from foolbox.distances import MeanSquaredDistance
+from torch.utils import data
+from torchvision import utils as tu
+
+from iterative_feature_removal import dataloader as dl, utils as u
 
 
 def get_attack(model, lp_metric, attack, attack_iter, l2_step_size=0.05, linf_step_size=0.05,
@@ -91,6 +95,7 @@ def run_attacks_single_batch(adversaries, model, b, l, norm_fct):
 
 
 def evaluate_robustness(config, model, data_loader, adversaries):
+    start_time = time.time()
     model.eval()
 
     adv_perturbations, perturbed_images, original_images, original_targets, is_adversarial = \
@@ -130,7 +135,8 @@ def evaluate_robustness(config, model, data_loader, adversaries):
                                                      eps_threshold=config.epsilon_threshold_accuracy_linf)
     success_rate = float(torch.sum(is_adversarial)) / len(is_adversarial)
 
-    perturbed_data = [perturbed_images.detach().cpu(), original_targets]
+    perturbed_data = [perturbed_images.detach().cpu(), original_targets, original_images]
+    print('robust eval', f'{time.time()-start_time:.3f} secs')
     return display_imgs, l2_robustness, l2_accuracy, linf_robustness, linf_accuracy, success_rate, perturbed_data
 
 
@@ -200,6 +206,7 @@ def get_first_derivative(model, b, l, adv_direction=False):
 
 
 def test_under_shift_rotation(config, model, data_loader):
+    start_time = time.time()
     print('shift erot attack')
     sorted_data_loader = data.DataLoader(data_loader.dataset, batch_size=config.attack_batch_size, shuffle=False)
 
@@ -219,24 +226,27 @@ def test_under_shift_rotation(config, model, data_loader):
     adversarials[mask] = b[mask]
     pred = torch.argmax(model(adversarials), dim=1)
     is_adversarial = (pred != l).float()
-    print('shift rot attack', is_adversarial.shape,  is_adversarial.mean())
+    print('shift rot attack', is_adversarial.shape,  is_adversarial.mean(), 'duration',
+          f'{time.time()-start_time:.3f} secs')
     return 1. - is_adversarial.mean()
 
 
-def run_boundary_attack(model, data_loader, n_iter):
-    sorted_data_loader = data.DataLoader(data_loader.dataset, batch_size=100, shuffle=False)  # slow --> only small bs
+def run_fbn_attack(model, data_loader, fbn_attack='brendel_bethge_attack',
+                   **attack_kwargs):
+    print(f'running {fbn_attack}', end=', ')
+    start_time = time.time()
 
-    model = model.eval()
-    fmodel = foolbox.models.PyTorchModel(model, bounds=(0, 1), num_classes=10)
-    attack = foolbox.attacks.BoundaryAttack(fmodel, distance=MeanSquaredDistance)
-    # attack = foolbox.attacks.L2BasicIterativeAttack(fmodel, distance=MeanSquaredDistance)  # to debug
+    # instantiate a model
+    fmodel = fbn.models.PyTorchModel(model, bounds=(0, 1))
 
-    for b, l in sorted_data_loader:
-        b, l = b.to(u.dev()), l.to(u.dev())
-        break
+    b, l = u.get_fixed_batch(data_loader, bs=100)
 
-    # requires at least foolbox version 2.3.0
-    adversarials = torch.tensor(attack(b.cpu().numpy(), l.cpu().numpy(), iterations=n_iter)).to(u.dev())
+    # apply the attack
+    if fbn_attack == 'brendel_bethge_attack':
+        attack = fbn.attacks.L2BrendelBethgeAttack(fmodel)
+    elif fbn_attack == 'boundary':
+        attack = fbn.attacks.BoundaryAttack(fmodel)
+    adversarials = attack(b,  l,  **attack_kwargs)
 
     mask = (adversarials != adversarials).type(torch.bool)  # detect nans
     adversarials[mask] = b[mask]
@@ -245,8 +255,11 @@ def run_boundary_attack(model, data_loader, n_iter):
     dists = torch.sqrt(torch.sum((adversarials.flatten(1) - b.flatten(1))**2, dim=1))
     dists[is_adversarial.type(torch.bool).bitwise_not()] = 1000
 
-    print(int(torch.sum(is_adversarial)), 'out of', len(is_adversarial), 'sucessfully attacked')
-    print('distance', torch.median(dists))   # vanilla net has 1.1
+    print(int(torch.sum(is_adversarial)), 'out of', len(is_adversarial), 'sucessfully attacked',
+          'distance', torch.median(dists), end=', ')   # vanilla net has 1.1
+
+    # plot
     adversarials[mask] = 0
     adversarials = tu.make_grid(adversarials, pad_value=2, nrow=10)
+    print(f'{time.time()-start_time:.3f} secs')
     return torch.median(dists), adversarials

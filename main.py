@@ -88,8 +88,8 @@ def main():
                 evaluate.plot_similarities(config, model, data_loaders['test'], writer, epoch)
 
         # robustness
-        if epoch % config.robustness_eval_interval == 0 or last_epoch:
-
+        if (epoch % config.robustness_eval_interval == 0 or last_epoch) and not config.debug:
+            print('here')
             models = [('model', model)]
             if model.n_redundant > 1 and config.training_mode == 'redundancy':
                 if config.all_in_one_model:
@@ -126,18 +126,15 @@ def main():
                     accuracy_plane = evaluate.evaluate_net(config, eval_model, data_loader)
                     writer.add_scalar(f'individuals_{dl_name}/{m_name}_accuracy', accuracy_plane, epoch)
 
-                    # shift and rotation
-                    accuracy_shift_rot = att.test_under_shift_rotation(config, eval_model, data_loaders['test'])
-                    writer.add_scalar(f'{name}_shift_and_rotation/accuracy', accuracy_shift_rot, global_step=epoch)
-
                     all_perturbed_data.append(perturbed_data)
 
-                # transferability
+                # transferability, project to 1.5
                 assert len(models) == len(all_perturbed_data)
                 transferability_matrix = torch.zeros((len(models), len(models)))
                 for m, (_, eval_model) in enumerate(models):
-                    for p, perturbed_data in enumerate(all_perturbed_data):
-                        acc_perturbed = evaluate.evaluate_net(config, eval_model, [perturbed_data])
+                    for p, (advs, orig_l, orig_x) in enumerate(all_perturbed_data):
+                        projected_advs = u.fix_perturbation_size(orig_x, advs - orig_x, 2.5).detach()
+                        acc_perturbed = evaluate.evaluate_net(config, eval_model, [(projected_advs, orig_l)])
                         transferability_matrix[p, m] = 1. - acc_perturbed
                 fig = u.plot_similarity_matrix(transferability_matrix, names=[name for name, _ in models],
                                                ylabel='source', xlabel='target')
@@ -155,11 +152,26 @@ def main():
 
         # black box robustness
         if (epoch % config.black_box_attack_interval == 0 or last_epoch) and epoch > 0 and not config.debug:
-            print('running boundary attack with ', config.boundary_attack_iter)
-            l2_robustness, adversarials = att.run_boundary_attack(model, data_loaders['test'],
-                                                                  n_iter=config.boundary_attack_iter)
-            writer.add_scalar(f'test_boundary_attack_l2/l2_robustness', l2_robustness, global_step=epoch)
-            writer.add_image(f'test_attack_l2/boundary_attack_adversarials', adversarials, global_step=epoch)
+            # BnB attack
+            l2_robustness, adversarials = att.run_fbn_attack(model, data_loaders['test'],
+                                                             fbn_attack='brendel_bethge_attack',
+                                                             lr=config.brendel_bethge_attack_lr,
+                                                             steps=config.brendel_bethge_attack_steps)
+            writer.add_scalar(f'test_BnB_l2/l2_robustness', l2_robustness, global_step=epoch)
+            writer.add_image(f'test_BnB_l2/BnB_adversarials', adversarials, global_step=epoch)
+
+            # Boundary attack
+            l2_robustness, adversarials = att.run_fbn_attack(model, data_loaders['test'],
+                                                             fbn_attack='boundary',
+                                                             steps=config.boundary_attack_steps,
+                                                             spherical_step=config.boundary_attack_attack_spherical_step,
+                                                             source_step=config.boundary_attack_source_step)
+            writer.add_scalar(f'test_BoundaryAttack_l2/l2_robustness', l2_robustness, global_step=epoch)
+            writer.add_image(f'test_BoundaryAttack_l2/BnB_adversarials', adversarials, global_step=epoch)
+
+            # shift and rotation
+            accuracy_shift_rot = att.test_under_shift_rotation(config, model, data_loaders['test'])
+            writer.add_scalar(f'test_shift_and_rotation/accuracy', accuracy_shift_rot, global_step=epoch)
 
         # mnist_c
         if epoch % config.robustness_eval_interval == 0 and config.mnist_c or last_epoch:
